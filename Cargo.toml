@@ -1,6 +1,6 @@
 [package]
 name = "async-lock"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 description = "Reference-counted async lock"
@@ -8,7 +8,7 @@ license = "Apache-2.0 OR MIT"
 repository = "https://github.com/stjepang/async-lock"
 homepage = "https://github.com/stjepang/async-lock"
 documentation = "https://docs.rs/async-lock"
-keywords = ["async", "file", "stdio", "stdin", "process"]
+keywords = ["asynchronous", "mutex", "lock", "synchronization"]
 categories = ["asynchronous", "concurrency"]
 readme = "README.md"
 
