@@ -2,7 +2,6 @@
 
 [![Build](https://github.com/stjepang/async-lock/workflows/Build%20and%20test/badge.svg)](
 https://github.com/stjepang/async-lock/actions)
-![Rustc version](https://img.shields.io/badge/rustc-1.40+-lightgray.svg)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](
 https://github.com/stjepang/async-lock)
 [![Cargo](https://img.shields.io/crates/v/async-lock.svg)](
