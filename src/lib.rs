@@ -40,8 +40,10 @@
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::process;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use event_listener::Event;
 
@@ -56,8 +58,11 @@ impl<T> Clone for Lock<T> {
 
 /// Data inside [`Lock`].
 struct Inner<T> {
-    /// Set to `true` when the lock is acquired by a [`LockGuard`].
-    locked: AtomicBool,
+    /// Current state of the lock.
+    ///
+    /// The least significant bit is set to 1 if the lock is acquired.
+    /// The other bits hold the number of starved lock operations.
+    state: AtomicUsize,
 
     /// Lock operations waiting for the lock to be released.
     lock_ops: Event,
@@ -81,7 +86,7 @@ impl<T> Lock<T> {
     /// ```
     pub fn new(data: T) -> Lock<T> {
         Lock(Arc::new(Inner {
-            locked: AtomicBool::new(false),
+            state: AtomicUsize::new(0),
             lock_ops: Event::new(),
             data: UnsafeCell::new(data),
         }))
@@ -102,19 +107,92 @@ impl<T> Lock<T> {
     /// assert_eq!(*guard, 10);
     /// # })
     /// ```
+    #[inline]
     pub async fn lock(&self) -> LockGuard<T> {
+        if let Some(guard) = self.try_lock() {
+            return guard;
+        }
+        self.lock_slow().await
+    }
+
+    /// Slow path for acquiring the mutex.
+    #[cold]
+    pub async fn lock_slow(&self) -> LockGuard<T> {
+        // Get the current time.
+        let start = Instant::now();
+
         loop {
-            // Try acquiring the lock.
-            if let Some(guard) = self.try_lock() {
-                return guard;
+            // Start listening for events.
+            let listener = self.0.lock_ops.listen();
+
+            // Try locking if nobody is being starved.
+            match self.0.state.compare_and_swap(0, 1, Ordering::Acquire) {
+                // Lock acquired!
+                0 => return LockGuard(self.clone()),
+
+                // Unlocked and somebody is starved - notify the first waiter in line.
+                s if s % 2 == 0 => self.0.lock_ops.notify_one(),
+
+                // The mutex is currently locked.
+                _ => {}
             }
 
-            // Start watching for notifications and try locking again.
-            let listener = self.0.lock_ops.listen();
-            if let Some(guard) = self.try_lock() {
-                return guard;
-            }
+            // Wait for a notification.
             listener.await;
+
+            // Try locking if nobody is being starved.
+            match self.0.state.compare_and_swap(0, 1, Ordering::Acquire) {
+                // Lock acquired!
+                0 => return LockGuard(self.clone()),
+
+                // Unlocked and somebody is starved - notify the first waiter in line.
+                s if s % 2 == 0 => self.0.lock_ops.notify_one(),
+
+                // The mutex is currently locked.
+                _ => {}
+            }
+
+            // If waiting for too long, fall back to a fairer locking strategy that will prevent
+            // newer lock operations from starving us forever.
+            if start.elapsed() > Duration::from_micros(500) {
+                break;
+            }
+        }
+
+        // Increment the number of starved lock operations.
+        if self.0.state.fetch_add(2, Ordering::Release) > usize::MAX / 2 {
+            // In case of potential overflow, abort.
+            process::abort();
+        }
+
+        // Decrement the counter when exiting this function.
+        let _call = CallOnDrop(|| {
+            self.0.state.fetch_sub(2, Ordering::Release);
+        });
+
+        loop {
+            // Start listening for events.
+            let listener = self.0.lock_ops.listen();
+
+            // Try locking if nobody else is being starved.
+            match self.0.state.compare_and_swap(2, 2 | 1, Ordering::Acquire) {
+                // Lock acquired!
+                0 => return LockGuard(self.clone()),
+
+                // Unlocked and somebody is starved - notify the first waiter in line.
+                s if s % 2 == 0 => self.0.lock_ops.notify_one(),
+
+                // The mutex is currently locked.
+                _ => {}
+            }
+
+            // Wait for a notification.
+            listener.await;
+
+            // Try acquiring the lock without waiting for others.
+            if self.0.state.fetch_or(1, Ordering::Acquire) % 2 == 0 {
+                return LockGuard(self.clone());
+            }
         }
     }
 
@@ -136,11 +214,7 @@ impl<T> Lock<T> {
     /// ```
     #[inline]
     pub fn try_lock(&self) -> Option<LockGuard<T>> {
-        if !self
-            .0
-            .locked
-            .compare_and_swap(false, true, Ordering::Acquire)
-        {
+        if self.0.state.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
             Some(LockGuard(self.clone()))
         } else {
             None
@@ -203,7 +277,8 @@ impl<T> LockGuard<T> {
 
 impl<T> Drop for LockGuard<T> {
     fn drop(&mut self) {
-        (self.0).0.locked.store(false, Ordering::Release);
+        // Remove the last bit and notify a waiting lock operation.
+        (self.0).0.state.fetch_sub(1, Ordering::Release);
         (self.0).0.lock_ops.notify_one();
     }
 }
@@ -231,5 +306,14 @@ impl<T> Deref for LockGuard<T> {
 impl<T> DerefMut for LockGuard<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *(self.0).0.data.get() }
+    }
+}
+
+/// Calls a function when dropped.
+struct CallOnDrop<F: Fn()>(F);
+
+impl<F: Fn()> Drop for CallOnDrop<F> {
+    fn drop(&mut self) {
+        (self.0)();
     }
 }

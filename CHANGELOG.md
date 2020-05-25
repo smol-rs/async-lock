@@ -1,3 +1,8 @@
+# Version 1.1.0
+
+- Make locking fair.
+- Add `LockGuard::source()`.
+
 # Version 1.0.2
 
 - Bump the `event-listener` version.

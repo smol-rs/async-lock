@@ -20,6 +20,10 @@ Furthermore, `LockGuard` is not tied to `Lock` by a lifetime, so you can keep gu
 as long as you want. This is useful when you want to spawn a task and move a guard into its
 future.
 
+The locking mechanism uses eventual fairness to ensure locking will be fair on average without
+sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
+starved for longer than 0.5 milliseconds.
+
 ## Examples
 
 ```rust
