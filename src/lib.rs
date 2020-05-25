@@ -9,6 +9,10 @@
 //! as long as you want. This is useful when you want to spawn a task and move a guard into its
 //! future.
 //!
+//! The locking mechanism uses eventual fairness to ensure locking will be fair on average without
+//! sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
+//! starved for longer than 0.5 milliseconds.
+//!
 //! # Examples
 //!
 //! ```
@@ -137,7 +141,7 @@ impl<T> Lock<T> {
             .locked
             .compare_and_swap(false, true, Ordering::Acquire)
         {
-            Some(LockGuard(self.0.clone()))
+            Some(LockGuard(self.clone()))
         } else {
             None
         }
@@ -173,15 +177,34 @@ impl<T: Default> Default for Lock<T> {
 }
 
 /// A guard that releases the lock when dropped.
-pub struct LockGuard<T>(Arc<Inner<T>>);
+pub struct LockGuard<T>(Lock<T>);
 
 unsafe impl<T: Send> Send for LockGuard<T> {}
 unsafe impl<T: Sync> Sync for LockGuard<T> {}
 
+impl<T> LockGuard<T> {
+    /// Returns a reference to the lock a guard came from.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # smol::block_on(async {
+    /// use async_lock::{Lock, LockGuard};
+    ///
+    /// let lock = Lock::new(10i32);
+    /// let guard = lock.lock().await;
+    /// dbg!(LockGuard::source(&guard));
+    /// # })
+    /// ```
+    pub fn source(guard: &LockGuard<T>) -> &Lock<T> {
+        &guard.0
+    }
+}
+
 impl<T> Drop for LockGuard<T> {
     fn drop(&mut self) {
-        self.0.locked.store(false, Ordering::Release);
-        self.0.lock_ops.notify_one();
+        (self.0).0.locked.store(false, Ordering::Release);
+        (self.0).0.lock_ops.notify_one();
     }
 }
 
@@ -201,12 +224,12 @@ impl<T> Deref for LockGuard<T> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.0.data.get() }
+        unsafe { &*(self.0).0.data.get() }
     }
 }
 
 impl<T> DerefMut for LockGuard<T> {
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.0.data.get() }
+        unsafe { &mut *(self.0).0.data.get() }
     }
 }
