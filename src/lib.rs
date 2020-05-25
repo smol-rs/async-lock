@@ -115,7 +115,7 @@ impl<T> Lock<T> {
         self.lock_slow().await
     }
 
-    /// Slow path for acquiring the mutex.
+    /// Slow path for acquiring the lock.
     #[cold]
     pub async fn lock_slow(&self) -> LockGuard<T> {
         // Get the current time.
@@ -133,7 +133,7 @@ impl<T> Lock<T> {
                 // Unlocked and somebody is starved - notify the first waiter in line.
                 s if s % 2 == 0 => self.0.lock_ops.notify_one(),
 
-                // The mutex is currently locked.
+                // The lock is currently acquired.
                 _ => {}
             }
 
@@ -148,7 +148,7 @@ impl<T> Lock<T> {
                 // Unlocked and somebody is starved - notify the first waiter in line.
                 s if s % 2 == 0 => self.0.lock_ops.notify_one(),
 
-                // The mutex is currently locked.
+                // The lock is currently acquired.
                 _ => {}
             }
 
@@ -182,7 +182,7 @@ impl<T> Lock<T> {
                 // Unlocked and somebody is starved - notify the first waiter in line.
                 s if s % 2 == 0 => self.0.lock_ops.notify_one(),
 
-                // The mutex is currently locked.
+                // The lock is currently acquired.
                 _ => {}
             }
 
