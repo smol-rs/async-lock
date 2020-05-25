@@ -1,3 +1,7 @@
+# version 1.1.1
+
+- Fix some typos.
+
 # Version 1.1.0
 
 - Make locking fair.
