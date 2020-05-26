@@ -1,3 +1,7 @@
+# version 1.1.2
+
+- Fix a deadlock issue.
+
 # version 1.1.1
 
 - Fix some typos.
