@@ -1,8 +1,12 @@
-# version 1.1.2
+# Version 1.1.3
+
+- Update dependencies.
+
+# Version 1.1.2
 
 - Fix a deadlock issue.
 
-# version 1.1.1
+# Version 1.1.1
 
 - Fix some typos.
 

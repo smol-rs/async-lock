@@ -152,7 +152,7 @@ impl<T> Lock<T> {
                 _ => {
                     // Notify the first listener in line because we probably received a
                     // notification that was meant for a starved task.
-                    self.0.lock_ops.notify_one();
+                    self.0.lock_ops.notify(1);
                     break;
                 }
             }
@@ -190,7 +190,7 @@ impl<T> Lock<T> {
                 // Lock is available.
                 _ => {
                     // Be fair: notify the first listener and then go wait in line.
-                    self.0.lock_ops.notify_one();
+                    self.0.lock_ops.notify(1);
                 }
             }
 
@@ -287,7 +287,7 @@ impl<T> Drop for LockGuard<T> {
     fn drop(&mut self) {
         // Remove the last bit and notify a waiting lock operation.
         (self.0).0.state.fetch_sub(1, Ordering::Release);
-        (self.0).0.lock_ops.notify_one();
+        (self.0).0.lock_ops.notify(1);
     }
 }
 
