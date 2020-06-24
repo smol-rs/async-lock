@@ -1,3 +1,7 @@
+# Version 1.1.4
+
+- Replace `usize::MAX` with `std::usize::MAX`.
+
 # Version 1.1.3
 
 - Update dependencies.
