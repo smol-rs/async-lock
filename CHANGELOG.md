@@ -1,3 +1,7 @@
+# Version 1.1.5
+
+- Replace the implementation with `async-mutex`.
+
 # Version 1.1.4
 
 - Replace `usize::MAX` with `std::usize::MAX`.
