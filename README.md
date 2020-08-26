@@ -9,40 +9,12 @@ https://crates.io/crates/async-lock)
 [![Documentation](https://docs.rs/async-lock/badge.svg)](
 https://docs.rs/async-lock)
 
-Reference-counted async lock.
+Async locking primitives.
 
-The `Lock` type is similar to `std::sync::Mutex`, except locking is an async operation.
+This crate provides two primitives:
 
-Note that `Lock` by itself acts like an `Arc` in the sense that cloning it returns just
-another reference to the same lock.
-
-Furthermore, `LockGuard` is not tied to `Lock` by a lifetime, so you can keep guards for
-as long as you want. This is useful when you want to spawn a task and move a guard into its
-future.
-
-The locking mechanism uses eventual fairness to ensure locking will be fair on average without
-sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
-starved for longer than 0.5 milliseconds.
-
-## Examples
-
-```rust
-use async_lock::Lock;
-use smol::Task;
-
-let lock = Lock::new(0);
-let mut tasks = vec![];
-
-for _ in 0..10 {
-    let lock = lock.clone();
-    tasks.push(Task::spawn(async move { *lock.lock().await += 1 }));
-}
-
-for task in tasks {
-    task.await;
-}
-assert_eq!(*lock.lock().await, 10);
-```
+* `Mutex` - a mutual exclusion lock.
+* `RwLock` - a reader-writer lock, allowing any number of readers or a single writer.
 
 ## License
 

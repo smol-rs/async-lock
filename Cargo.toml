@@ -1,6 +1,6 @@
 [package]
 name = "async-lock"
-version = "1.1.5"
+version = "2.0.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 description = "Reference-counted async lock"
@@ -14,7 +14,4 @@ readme = "README.md"
 
 [dependencies]
 async-mutex = "1.1.5"
-
-[dev-dependencies]
-smol = "0.1.18"
-futures = "0.3.5"
+async-rwlock = "1.0.1"

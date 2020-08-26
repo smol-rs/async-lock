@@ -1,3 +1,7 @@
+# Version 2.0.0
+
+- Only re-export `async-mutex` and `async-rwlock`.
+
 # Version 1.1.5
 
 - Replace the implementation with `async-mutex`.
