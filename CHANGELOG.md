@@ -1,3 +1,7 @@
+# Version 2.0.1
+
+- Update crate description.
+
 # Version 2.0.0
 
 - Only re-export `async-mutex` and `async-rwlock`.
