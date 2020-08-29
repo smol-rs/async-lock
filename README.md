@@ -9,7 +9,7 @@ https://crates.io/crates/async-lock)
 [![Documentation](https://docs.rs/async-lock/badge.svg)](
 https://docs.rs/async-lock)
 
-Async locking primitives.
+Async synchronization primitives.
 
 This crate provides the following primitives:
 

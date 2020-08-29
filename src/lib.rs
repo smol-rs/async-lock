@@ -1,4 +1,4 @@
-//! Async locking primitives.
+//! Async synchronization primitives.
 //!
 //! This crate provides the following primitives:
 //!

@@ -1,9 +1,9 @@
 [package]
 name = "async-lock"
-version = "2.1.0"
+version = "2.1.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
-description = "Async locking primitives"
+description = "Async synchronization primitives"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/stjepang/async-lock"
 homepage = "https://github.com/stjepang/async-lock"

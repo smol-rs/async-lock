@@ -1,3 +1,7 @@
+# Version 2.1.1
+
+- Update crate description.
+
 # Version 2.1.0
 
 - Add `Barrier` and `Semaphore`.
