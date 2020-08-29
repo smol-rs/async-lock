@@ -13,5 +13,7 @@ categories = ["asynchronous", "concurrency"]
 readme = "README.md"
 
 [dependencies]
-async-mutex = "1.1.5"
-async-rwlock = "1.0.1"
+async-barrier = "1.0.0"
+async-mutex = "1.2.0"
+async-rwlock = "1.1.0"
+async-semaphore = "1.0.0"
