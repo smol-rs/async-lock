@@ -1,6 +1,6 @@
 [package]
 name = "async-lock"
-version = "2.1.1"
+version = "2.1.2"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 description = "Async synchronization primitives"

@@ -1,3 +1,7 @@
+# Version 2.1.2
+
+- Update dependencies.
+
 # Version 2.1.1
 
 - Update crate description.
