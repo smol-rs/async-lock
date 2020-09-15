@@ -1,3 +1,7 @@
+# Version 2.1.3
+
+- Add `#![forbid(unsafe_code)]`.
+
 # Version 2.1.2
 
 - Update dependencies.

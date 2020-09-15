@@ -7,6 +7,7 @@
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
 
+#![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 #[doc(inline)]
