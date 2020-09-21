@@ -1,0 +1,19 @@
+[package]
+name = "async-semaphore"
+version = "1.1.0"
+authors = ["Stjepan Glavina <stjepang@gmail.com>"]
+edition = "2018"
+description = "An async semaphore"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/stjepang/async-lock"
+homepage = "https://github.com/stjepang/async-lock"
+documentation = "https://docs.rs/async-semaphore"
+keywords = ["limit", "concurrent", "monitor", "synchronization", "sync"]
+categories = ["asynchronous", "concurrency"]
+readme = "../README.md"
+
+[dependencies]
+event-listener = "2.4.0"
+
+[dev-dependencies]
+futures-lite = "1.0.0"
