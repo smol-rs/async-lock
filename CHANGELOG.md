@@ -1,3 +1,8 @@
+# Version 2.2.0
+
+- Add functions to upgrade and downgrade `RwLock` guards.
+- Make all constructors `const fn`.
+
 # Version 2.1.3
 
 - Add `#![forbid(unsafe_code)]`.
