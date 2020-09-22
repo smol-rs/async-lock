@@ -258,7 +258,6 @@ impl<T: ?Sized> RwLock<T> {
     /// *writer = 2;
     /// # })
     /// ```
-    #[inline]
     pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, T>> {
         // First try grabbing the mutex.
         let lock = self.mutex.try_lock()?;
@@ -510,14 +509,14 @@ unsafe impl<T: Send + Sync + ?Sized> Send for RwLockUpgradableReadGuard<'_, T> {
 unsafe impl<T: Sync + ?Sized> Sync for RwLockUpgradableReadGuard<'_, T> {}
 
 impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
-    /// Converts this guard into a write guard.
+    /// Converts this guard into a writer guard.
     fn into_writer(self) -> RwLockWriteGuard<'a, T> {
         let writer = RwLockWriteGuard { writer: RwLockWriteGuardInner(self.reader.0), reserved: self.reserved };
         mem::forget(self.reader);
         writer
     }
 
-    /// Converts this guard into a reader guard.
+    /// Downgrades into a regular reader guard.
     ///
     /// # Examples
     ///
@@ -537,7 +536,6 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// assert!(lock.try_upgradable_read().is_some());
     /// # })
     /// ```
-    #[inline]
     pub fn downgrade(guard: Self) -> RwLockReadGuard<'a, T> {
         guard.reader
     }
@@ -667,7 +665,7 @@ unsafe impl<T: Send + ?Sized> Send for RwLockWriteGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, T> {}
 
 impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
-    /// Converts this guard into a reader guard.
+    /// Downgrades into a regular reader guard.
     ///
     /// # Examples
     ///
@@ -688,20 +686,20 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// assert!(lock.try_read().is_some());
     /// # })
     /// ```
-    #[inline]
-    pub fn downgrade(write_guard: Self) -> RwLockReadGuard<'a, T> {
+    pub fn downgrade(guard: Self) -> RwLockReadGuard<'a, T> {
         // Atomically downgrade state.
-        write_guard.writer.0.state.fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
+        guard.writer.0.state.fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
+
         // Trigger the "no writer" event.
-        write_guard.writer.0.no_writer.notify(1);
-        // Create and return the read guard
-        let read_guard = RwLockReadGuard(write_guard.writer.0);
-        mem::forget(write_guard.writer); // RwLockWriteGuardInner::drop should not be called !
-        read_guard
+        guard.writer.0.no_writer.notify(1);
+
+        // Convert into a read guard and return.
+        let new_guard = RwLockReadGuard(guard.writer.0);
+        mem::forget(guard.writer); // `RwLockWriteGuardInner::drop()` should not be called!
+        new_guard
     }
 
-    /// Atomically downgrades a write lock into an upgradable read lock
-    /// without allowing any writers to take exclusive access of the lock in the meantime.
+    /// Downgrades into an upgradable reader guard.
     ///
     /// # Examples
     ///
@@ -728,14 +726,14 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     pub fn downgrade_to_upgradable(guard: Self) -> RwLockUpgradableReadGuard<'a, T> {
         // Atomically downgrade state.
         guard.writer.0.state.fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
-        // Create and return the upgradable read guard
-        let reader = RwLockReadGuard(guard.writer.0);
-        mem::forget(guard.writer); // RwLockWriteGuardInner::drop should not be called !
 
-        RwLockUpgradableReadGuard {
-            reader,
+        // Convert into an upgradable read guard and return.
+        let new_guard = RwLockUpgradableReadGuard {
+            reader: RwLockReadGuard(guard.writer.0),
             reserved: guard.reserved,
-        }
+        };
+        mem::forget(guard.writer); // `RwLockWriteGuardInner::drop()` should not be called!
+        new_guard
     }
 }
 
