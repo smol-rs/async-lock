@@ -62,7 +62,7 @@ impl<T> Mutex<T> {
     ///
     /// let mutex = Mutex::new(0);
     /// ```
-    pub fn new(data: T) -> Mutex<T> {
+    pub const fn new(data: T) -> Mutex<T> {
         Mutex {
             state: AtomicUsize::new(0),
             lock_ops: Event::new(),

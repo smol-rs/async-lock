@@ -37,7 +37,7 @@ impl Barrier {
     ///
     /// let barrier = Barrier::new(5);
     /// ```
-    pub fn new(n: usize) -> Barrier {
+    pub const fn new(n: usize) -> Barrier {
         Barrier {
             n,
             state: Mutex::new(State {

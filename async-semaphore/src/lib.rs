@@ -27,7 +27,7 @@ impl Semaphore {
     ///
     /// let s = Semaphore::new(5);
     /// ```
-    pub fn new(n: usize) -> Semaphore {
+    pub const fn new(n: usize) -> Semaphore {
         Semaphore {
             count: AtomicUsize::new(n),
             event: Event::new(),

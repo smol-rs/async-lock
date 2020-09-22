@@ -101,7 +101,7 @@ impl<T> RwLock<T> {
     ///
     /// let lock = RwLock::new(0);
     /// ```
-    pub fn new(t: T) -> RwLock<T> {
+    pub const fn new(t: T) -> RwLock<T> {
         RwLock {
             mutex: Mutex::new(()),
             no_readers: Event::new(),
