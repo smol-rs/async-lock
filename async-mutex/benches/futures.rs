@@ -3,10 +3,20 @@
 extern crate test;
 
 use std::sync::Arc;
+use std::thread;
 
-use async_std::task;
+use async_executor::Executor;
 use futures::lock::Mutex;
+use futures_lite::future;
+use once_cell::sync::Lazy;
 use test::Bencher;
+
+static EX: Lazy<Executor> = Lazy::new(|| {
+    for _ in 0..num_cpus::get() {
+        thread::spawn(|| future::block_on(EX.run(future::pending::<()>())));
+    }
+    Executor::new()
+});
 
 #[bench]
 fn create(b: &mut Bencher) {
@@ -15,12 +25,12 @@ fn create(b: &mut Bencher) {
 
 #[bench]
 fn contention(b: &mut Bencher) {
-    b.iter(|| task::block_on(run(10, 1000)));
+    b.iter(|| future::block_on(run(10, 1000)));
 }
 
 #[bench]
 fn no_contention(b: &mut Bencher) {
-    b.iter(|| task::block_on(run(1, 10000)));
+    b.iter(|| future::block_on(run(1, 10000)));
 }
 
 async fn run(task: usize, iter: usize) {
@@ -29,7 +39,7 @@ async fn run(task: usize, iter: usize) {
 
     for _ in 0..task {
         let m = m.clone();
-        tasks.push(task::spawn(async move {
+        tasks.push(EX.spawn(async move {
             for _ in 0..iter {
                 let _ = m.lock().await;
             }
