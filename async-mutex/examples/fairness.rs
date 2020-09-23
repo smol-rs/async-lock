@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use async_io::Timer;
 use async_mutex::Mutex;
-use smol::Timer;
+use futures_lite::future;
 
 fn main() {
     let num_threads = 30;
@@ -18,7 +19,7 @@ fn main() {
     for i in 0..num_threads {
         let hits = hits.clone();
         threads.push(thread::spawn(move || {
-            smol::run(async {
+            future::block_on(async {
                 let start = Instant::now();
 
                 while start.elapsed() < Duration::from_secs(1) {
