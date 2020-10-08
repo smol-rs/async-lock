@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::thread;
 
-use async_barrier::Barrier;
+use async_lock::Barrier;
 use futures_lite::future;
 
 #[test]

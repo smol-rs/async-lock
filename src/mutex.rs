@@ -1,28 +1,3 @@
-//! An async mutex.
-//!
-//! The locking mechanism uses eventual fairness to ensure locking will be fair on average without
-//! sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
-//! starved for longer than 0.5 milliseconds.
-//!
-//! # Examples
-//!
-//! ```
-//! # futures_lite::future::block_on(async {
-//! use async_mutex::Mutex;
-//!
-//! let m = Mutex::new(1);
-//!
-//! let mut guard = m.lock().await;
-//! *guard = 2;
-//!
-//! assert!(m.try_lock().is_none());
-//! drop(guard);
-//! assert_eq!(*m.try_lock().unwrap(), 2);
-//! # })
-//! ```
-
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -35,6 +10,27 @@ use std::usize;
 use event_listener::Event;
 
 /// An async mutex.
+///
+/// The locking mechanism uses eventual fairness to ensure locking will be fair on average without
+/// sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
+/// starved for longer than 0.5 milliseconds.
+///
+/// # Examples
+///
+/// ```
+/// # futures_lite::future::block_on(async {
+/// use async_lock::Mutex;
+///
+/// let m = Mutex::new(1);
+///
+/// let mut guard = m.lock().await;
+/// *guard = 2;
+///
+/// assert!(m.try_lock().is_none());
+/// drop(guard);
+/// assert_eq!(*m.try_lock().unwrap(), 2);
+/// # })
+/// ```
 pub struct Mutex<T: ?Sized> {
     /// Current state of the mutex.
     ///
@@ -58,7 +54,7 @@ impl<T> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     ///
     /// let mutex = Mutex::new(0);
     /// ```
@@ -75,7 +71,7 @@ impl<T> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     ///
     /// let mutex = Mutex::new(10);
     /// assert_eq!(mutex.into_inner(), 10);
@@ -94,7 +90,7 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     ///
     /// let mutex = Mutex::new(10);
     /// let guard = mutex.lock().await;
@@ -207,7 +203,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     ///
     /// let mutex = Mutex::new(10);
     /// if let Some(guard) = mutex.try_lock() {
@@ -233,7 +229,7 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     ///
     /// let mut mutex = Mutex::new(0);
     /// *mutex.get_mut() = 10;
@@ -254,7 +250,7 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     /// use std::sync::Arc;
     ///
     /// let mutex = Arc::new(Mutex::new(10));
@@ -279,7 +275,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_mutex::Mutex;
+    /// use async_lock::Mutex;
     /// use std::sync::Arc;
     ///
     /// let mutex = Arc::new(Mutex::new(10));
@@ -339,7 +335,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_mutex::{Mutex, MutexGuard};
+    /// use async_lock::{Mutex, MutexGuard};
     ///
     /// let mutex = Mutex::new(10i32);
     /// let guard = mutex.lock().await;
@@ -398,7 +394,7 @@ impl<T: ?Sized> MutexGuardArc<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_mutex::{Mutex, MutexGuardArc};
+    /// use async_lock::{Mutex, MutexGuardArc};
     /// use std::sync::Arc;
     ///
     /// let mutex = Arc::new(Mutex::new(10i32));

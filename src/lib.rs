@@ -7,8 +7,14 @@
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
 
-#![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
-#[doc(inline)]
-pub use {async_barrier::*, async_mutex::*, async_rwlock::*, async_semaphore::*};
+mod barrier;
+mod mutex;
+mod rwlock;
+mod semaphore;
+
+pub use barrier::{Barrier, BarrierWaitResult};
+pub use mutex::{Mutex, MutexGuard, MutexGuardArc};
+pub use rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+pub use semaphore::{Semaphore, SemaphoreGuard, SemaphoreGuardArc};

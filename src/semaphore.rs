@@ -1,10 +1,3 @@
-//! An async semaphore.
-//!
-//! A semaphore is a synchronization primitive that limits the number of concurrent operations.
-
-#![forbid(unsafe_code)]
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -23,7 +16,7 @@ impl Semaphore {
     /// # Examples
     ///
     /// ```
-    /// use async_semaphore::Semaphore;
+    /// use async_lock::Semaphore;
     ///
     /// let s = Semaphore::new(5);
     /// ```
@@ -42,7 +35,7 @@ impl Semaphore {
     /// # Examples
     ///
     /// ```
-    /// use async_semaphore::Semaphore;
+    /// use async_lock::Semaphore;
     ///
     /// let s = Semaphore::new(2);
     ///
@@ -80,7 +73,7 @@ impl Semaphore {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_semaphore::Semaphore;
+    /// use async_lock::Semaphore;
     ///
     /// let s = Semaphore::new(2);
     /// let guard = s.acquire().await;
@@ -111,7 +104,7 @@ impl Semaphore {
     /// # Examples
     ///
     /// ```
-    /// use async_semaphore::Semaphore;
+    /// use async_lock::Semaphore;
     /// use std::sync::Arc;
     ///
     /// let s = Arc::new(Semaphore::new(2));
@@ -150,7 +143,7 @@ impl Semaphore {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_semaphore::Semaphore;
+    /// use async_lock::Semaphore;
     /// use std::sync::Arc;
     ///
     /// let s = Arc::new(Semaphore::new(2));

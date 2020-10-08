@@ -1,14 +1,12 @@
 use std::sync::Arc;
 use std::thread;
 
-use async_mutex::Mutex;
-use futures::channel::mpsc;
-use futures::executor::block_on;
-use futures::prelude::*;
+use async_lock::Mutex;
+use futures_lite::future;
 
 #[test]
 fn smoke() {
-    block_on(async {
+    future::block_on(async {
         let m = Mutex::new(());
         drop(m.lock().await);
         drop(m.lock().await);
@@ -36,8 +34,8 @@ fn get_mut() {
 
 #[test]
 fn contention() {
-    block_on(async {
-        let (tx, mut rx) = mpsc::unbounded();
+    future::block_on(async {
+        let (tx, rx) = async_channel::unbounded();
 
         let tx = Arc::new(tx);
         let mutex = Arc::new(Mutex::new(0i32));
@@ -48,17 +46,17 @@ fn contention() {
             let mutex = mutex.clone();
 
             thread::spawn(|| {
-                block_on(async move {
+                future::block_on(async move {
                     let mut lock = mutex.lock().await;
                     *lock += 1;
-                    tx.unbounded_send(()).unwrap();
+                    tx.send(()).await.unwrap();
                     drop(lock);
                 })
             });
         }
 
         for _ in 0..num_tasks {
-            rx.next().await.unwrap();
+            rx.recv().await.unwrap();
         }
 
         let lock = mutex.lock().await;

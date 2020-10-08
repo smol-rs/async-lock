@@ -1,7 +1,7 @@
 use std::sync::{mpsc, Arc};
 use std::thread;
 
-use async_semaphore::Semaphore;
+use async_lock::Semaphore;
 use futures_lite::future;
 
 #[test]

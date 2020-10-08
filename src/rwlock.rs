@@ -1,34 +1,3 @@
-//! An async reader-writer lock.
-//!
-//! This type of lock allows multiple readers or one writer at any point in time.
-//!
-//! The locking strategy is write-preferring, which means writers are never starved.
-//! Releasing a write lock wakes the next blocked reader and the next blocked writer.
-//!
-//! # Examples
-//!
-//! ```
-//! # futures_lite::future::block_on(async {
-//! use async_rwlock::RwLock;
-//!
-//! let lock = RwLock::new(5);
-//!
-//! // Multiple read locks can be held at a time.
-//! let r1 = lock.read().await;
-//! let r2 = lock.read().await;
-//! assert_eq!(*r1, 5);
-//! assert_eq!(*r2, 5);
-//! drop((r1, r2));
-//!
-//! // Only one write lock can be held at a time.
-//! let mut w = lock.write().await;
-//! *w += 1;
-//! assert_eq!(*w, 6);
-//! # })
-//! ```
-
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-
 use std::cell::UnsafeCell;
 use std::fmt;
 use std::mem;
@@ -36,19 +5,25 @@ use std::ops::{Deref, DerefMut};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use async_mutex::{Mutex, MutexGuard};
 use event_listener::Event;
+
+use crate::{Mutex, MutexGuard};
 
 const WRITER_BIT: usize = 1;
 const ONE_READER: usize = 2;
 
 /// An async reader-writer lock.
 ///
+/// This type of lock allows multiple readers or one writer at any point in time.
+///
+/// The locking strategy is write-preferring, which means writers are never starved.
+/// Releasing a write lock wakes the next blocked reader and the next blocked writer.
+///
 /// # Examples
 ///
 /// ```
 /// # futures_lite::future::block_on(async {
-/// use async_rwlock::RwLock;
+/// use async_lock::RwLock;
 ///
 /// let lock = RwLock::new(5);
 ///
@@ -59,7 +34,7 @@ const ONE_READER: usize = 2;
 /// assert_eq!(*r2, 5);
 /// drop((r1, r2));
 ///
-/// // Only one write locks can be held at a time.
+/// // Only one write lock can be held at a time.
 /// let mut w = lock.write().await;
 /// *w += 1;
 /// assert_eq!(*w, 6);
@@ -97,7 +72,7 @@ impl<T> RwLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(0);
     /// ```
@@ -116,7 +91,7 @@ impl<T> RwLock<T> {
     /// # Examples
     ///
     /// ```
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(5);
     /// assert_eq!(lock.into_inner(), 5);
@@ -136,7 +111,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -185,7 +160,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -246,7 +221,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -302,7 +277,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -353,7 +328,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -368,7 +343,10 @@ impl<T: ?Sized> RwLock<T> {
 
         // If there are no readers, grab the write lock.
         if self.state.compare_and_swap(0, WRITER_BIT, Ordering::AcqRel) == 0 {
-            Some(RwLockWriteGuard { writer: RwLockWriteGuardInner(self), reserved: lock })
+            Some(RwLockWriteGuard {
+                writer: RwLockWriteGuardInner(self),
+                reserved: lock,
+            })
         } else {
             None
         }
@@ -382,7 +360,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -396,7 +374,10 @@ impl<T: ?Sized> RwLock<T> {
 
         // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
         self.state.fetch_or(WRITER_BIT, Ordering::SeqCst);
-        let guard = RwLockWriteGuard { writer: RwLockWriteGuardInner(self), reserved: lock };
+        let guard = RwLockWriteGuard {
+            writer: RwLockWriteGuardInner(self),
+            reserved: lock,
+        };
 
         // If there are readers, we need to wait for them to finish.
         while self.state.load(Ordering::SeqCst) != WRITER_BIT {
@@ -422,7 +403,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::RwLock;
+    /// use async_lock::RwLock;
     ///
     /// let mut lock = RwLock::new(1);
     ///
@@ -511,7 +492,10 @@ unsafe impl<T: Sync + ?Sized> Sync for RwLockUpgradableReadGuard<'_, T> {}
 impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// Converts this guard into a writer guard.
     fn into_writer(self) -> RwLockWriteGuard<'a, T> {
-        let writer = RwLockWriteGuard { writer: RwLockWriteGuardInner(self.reader.0), reserved: self.reserved };
+        let writer = RwLockWriteGuard {
+            writer: RwLockWriteGuardInner(self.reader.0),
+            reserved: self.reserved,
+        };
         mem::forget(self.reader);
         writer
     }
@@ -522,7 +506,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -532,7 +516,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// assert!(lock.try_upgradable_read().is_none());
     ///
     /// let reader = RwLockUpgradableReadGuard::downgrade(reader);
-    /// 
+    ///
     /// assert!(lock.try_upgradable_read().is_some());
     /// # })
     /// ```
@@ -551,7 +535,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -586,7 +570,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -671,7 +655,7 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockWriteGuard};
+    /// use async_lock::{RwLock, RwLockWriteGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -682,13 +666,17 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// let reader = RwLockWriteGuard::downgrade(writer);
     /// assert_eq!(*reader, 2);
-    /// 
+    ///
     /// assert!(lock.try_read().is_some());
     /// # })
     /// ```
     pub fn downgrade(guard: Self) -> RwLockReadGuard<'a, T> {
         // Atomically downgrade state.
-        guard.writer.0.state.fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
+        guard
+            .writer
+            .0
+            .state
+            .fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
 
         // Trigger the "no writer" event.
         guard.writer.0.no_writer.notify(1);
@@ -705,7 +693,7 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_rwlock::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
     ///
     /// let lock = RwLock::new(1);
     ///
@@ -716,7 +704,7 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     ///
     /// let reader = RwLockWriteGuard::downgrade_to_upgradable(writer);
     /// assert_eq!(*reader, 2);
-    /// 
+    ///
     /// assert!(lock.try_write().is_none());
     /// assert!(lock.try_read().is_some());
     ///
@@ -725,7 +713,11 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// ```
     pub fn downgrade_to_upgradable(guard: Self) -> RwLockUpgradableReadGuard<'a, T> {
         // Atomically downgrade state.
-        guard.writer.0.state.fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
+        guard
+            .writer
+            .0
+            .state
+            .fetch_add(ONE_READER - WRITER_BIT, Ordering::SeqCst);
 
         // Convert into an upgradable read guard and return.
         let new_guard = RwLockUpgradableReadGuard {

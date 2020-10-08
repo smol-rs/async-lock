@@ -1,12 +1,6 @@
-//! An async barrier.
-//!
-//! This crate is an async version of [`std::sync::Barrier`].
-
-#![forbid(unsafe_code)]
-#![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
-
-use async_mutex::Mutex;
 use event_listener::Event;
+
+use crate::Mutex;
 
 /// A counter to synchronize multiple tasks at the same time.
 #[derive(Debug)]
@@ -33,7 +27,7 @@ impl Barrier {
     /// # Examples
     ///
     /// ```
-    /// use async_barrier::Barrier;
+    /// use async_lock::Barrier;
     ///
     /// let barrier = Barrier::new(5);
     /// ```
@@ -58,7 +52,7 @@ impl Barrier {
     /// # Examples
     ///
     /// ```
-    /// use async_barrier::Barrier;
+    /// use async_lock::Barrier;
     /// use futures_lite::future;
     /// use std::sync::Arc;
     /// use std::thread;
@@ -106,7 +100,7 @@ impl Barrier {
 ///
 /// ```
 /// # futures_lite::future::block_on(async {
-/// use async_barrier::Barrier;
+/// use async_lock::Barrier;
 ///
 /// let barrier = Barrier::new(1);
 /// let barrier_wait_result = barrier.wait().await;
@@ -124,7 +118,7 @@ impl BarrierWaitResult {
     ///
     /// ```
     /// # futures_lite::future::block_on(async {
-    /// use async_barrier::Barrier;
+    /// use async_lock::Barrier;
     /// use futures_lite::future;
     ///
     /// let barrier = Barrier::new(2);
