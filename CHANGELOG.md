@@ -1,3 +1,7 @@
+# Version 2.3.0
+
+- Merge all subcrates.
+
 # Version 2.2.0
 
 - Add functions to upgrade and downgrade `RwLock` guards.
