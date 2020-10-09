@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::thread;
 
 use async_lock::{RwLock, RwLockUpgradableReadGuard};
-use futures_lite::{future, FutureExt};
+use futures_lite::{future, prelude::*};
 
 fn spawn<T: Send + 'static>(f: impl Future<Output = T> + Send + 'static) -> future::Boxed<T> {
     let (s, r) = async_channel::bounded(1);
