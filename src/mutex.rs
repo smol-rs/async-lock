@@ -1,13 +1,16 @@
-use std::cell::UnsafeCell;
-use std::fmt;
-use std::ops::{Deref, DerefMut};
-use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::usize;
+use std::{cell::UnsafeCell, task::Context};
+use std::{fmt, task::Poll};
+use std::{future::Future, process};
+use std::{
+    ops::{Deref, DerefMut},
+    pin::Pin,
+};
 
-use event_listener::Event;
+use event_listener::{Event, EventListener};
 
 /// An async mutex.
 ///
@@ -447,5 +450,80 @@ struct CallOnDrop<F: Fn()>(F);
 impl<F: Fn()> Drop for CallOnDrop<F> {
     fn drop(&mut self) {
         (self.0)();
+    }
+}
+
+/// PollMutex
+#[derive(Debug)]
+pub struct PollMutex<T: ?Sized> {
+    mutex: Arc<Mutex<T>>,
+    listener: Option<EventListener>,
+}
+
+impl<T: ?Sized> From<Arc<Mutex<T>>> for PollMutex<T> {
+    fn from(mutex: Arc<Mutex<T>>) -> Self {
+        Self {
+            mutex,
+            listener: None,
+        }
+    }
+}
+
+impl<T: ?Sized> PollMutex<T> {
+    /// new
+    pub fn new(mutex: Arc<Mutex<T>>) -> Self {
+        Self::from(mutex)
+    }
+
+    /// poll_lock_arc
+    pub fn poll_lock_arc(&mut self, cx: &mut Context<'_>) -> Poll<MutexGuardArc<T>> {
+        loop {
+            if let Some(l) = &mut self.listener {
+                if Pin::new(l).poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
+                self.listener = None;
+            }
+            loop {
+                if let Some(guard) = self.mutex.try_lock_arc() {
+                    self.listener = None;
+                    return Poll::Ready(guard);
+                }
+                match &mut self.listener {
+                    Some(_) => {
+                        break;
+                    }
+                    None => {
+                        self.listener = Some(self.mutex.lock_ops.listen());
+                    }
+                }
+            }
+        }
+    }
+
+    /// poll_lock
+    pub fn poll_lock(&mut self, cx: &mut Context<'_>) -> Poll<MutexGuard<'_, T>> {
+        loop {
+            if let Some(l) = &mut self.listener {
+                if Pin::new(l).poll(cx).is_pending() {
+                    return Poll::Pending;
+                }
+                self.listener = None;
+            }
+            loop {
+                if let Some(guard) = self.mutex.try_lock() {
+                    self.listener = None;
+                    return Poll::Ready(guard);
+                }
+                match &mut self.listener {
+                    Some(_) => {
+                        break;
+                    }
+                    None => {
+                        self.listener = Some(self.mutex.lock_ops.listen());
+                    }
+                }
+            }
+        }
     }
 }
