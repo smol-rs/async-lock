@@ -342,7 +342,11 @@ impl<T: ?Sized> RwLock<T> {
         let lock = self.mutex.try_lock()?;
 
         // If there are no readers, grab the write lock.
-        if self.state.compare_and_swap(0, WRITER_BIT, Ordering::AcqRel) == 0 {
+        if self
+            .state
+            .compare_exchange(0, WRITER_BIT, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
             Some(RwLockWriteGuard {
                 writer: RwLockWriteGuardInner(self),
                 reserved: lock,
@@ -555,8 +559,8 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
             .reader
             .0
             .state
-            .compare_and_swap(ONE_READER, WRITER_BIT, Ordering::AcqRel)
-            == ONE_READER
+            .compare_exchange(ONE_READER, WRITER_BIT, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
         {
             Ok(guard.into_writer())
         } else {

@@ -117,7 +117,11 @@ impl<T: ?Sized> Mutex<T> {
             let listener = self.lock_ops.listen();
 
             // Try locking if nobody is being starved.
-            match self.state.compare_and_swap(0, 1, Ordering::Acquire) {
+            match self
+                .state
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire)
+                .unwrap_or_else(|x| x)
+            {
                 // Lock acquired!
                 0 => return,
 
@@ -132,7 +136,11 @@ impl<T: ?Sized> Mutex<T> {
             listener.await;
 
             // Try locking if nobody is being starved.
-            match self.state.compare_and_swap(0, 1, Ordering::Acquire) {
+            match self
+                .state
+                .compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire)
+                .unwrap_or_else(|x| x)
+            {
                 // Lock acquired!
                 0 => return,
 
@@ -171,7 +179,11 @@ impl<T: ?Sized> Mutex<T> {
             let listener = self.lock_ops.listen();
 
             // Try locking if nobody else is being starved.
-            match self.state.compare_and_swap(2, 2 | 1, Ordering::Acquire) {
+            match self
+                .state
+                .compare_exchange(2, 2 | 1, Ordering::Acquire, Ordering::Acquire)
+                .unwrap_or_else(|x| x)
+            {
                 // Lock acquired!
                 2 => return,
 
@@ -213,7 +225,11 @@ impl<T: ?Sized> Mutex<T> {
     /// ```
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<'_, T>> {
-        if self.state.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
+        if self
+            .state
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire)
+            .is_ok()
+        {
             Some(MutexGuard(self))
         } else {
             None
@@ -286,7 +302,11 @@ impl<T: ?Sized> Mutex<T> {
     /// ```
     #[inline]
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<MutexGuardArc<T>> {
-        if self.state.compare_and_swap(0, 1, Ordering::Acquire) == 0 {
+        if self
+            .state
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Acquire)
+            .is_ok()
+        {
             Some(MutexGuardArc(self.clone()))
         } else {
             None
