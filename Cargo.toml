@@ -10,7 +10,6 @@ homepage = "https://github.com/smol-rs/async-lock"
 documentation = "https://docs.rs/async-lock"
 keywords = ["lock", "mutex", "rwlock", "semaphore", "barrier"]
 categories = ["asynchronous", "concurrency"]
-readme = "README.md"
 
 [dependencies]
 event-listener = "2.5.1"
