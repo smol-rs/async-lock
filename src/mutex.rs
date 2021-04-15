@@ -4,7 +4,10 @@ use std::ops::{Deref, DerefMut};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, Instant};
+
 use std::usize;
 
 use event_listener::Event;
@@ -110,6 +113,7 @@ impl<T: ?Sized> Mutex<T> {
     #[cold]
     async fn acquire_slow(&self) {
         // Get the current time.
+        #[cfg(not(target_arch = "wasm32"))]
         let start = Instant::now();
 
         loop {
@@ -158,6 +162,7 @@ impl<T: ?Sized> Mutex<T> {
 
             // If waiting for too long, fall back to a fairer locking strategy that will prevent
             // newer lock operations from starving us forever.
+            #[cfg(not(target_arch = "wasm32"))]
             if start.elapsed() > Duration::from_micros(500) {
                 break;
             }

@@ -21,6 +21,7 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
             toolchain: ${{ matrix.rust }}
+            target: wasm32-unknown-unknown
             profile: minimal
             override: true
 
@@ -36,6 +37,12 @@ jobs:
         with:
           command: check
           args: --all --benches --examples --tests -Z features=dev_dep
+
+      - name: Run cargo check for WASM
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+          args: --all --bins --examples --tests --all-features --target wasm32-unknown-unknown
 
       - name: Run cargo test
         uses: actions-rs/cargo@v1
