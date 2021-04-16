@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::thread;
 
 use async_lock::Barrier;
-use futures_lite::future;
+use futures_lite::future; 
 
 #[test]
 fn smoke() {
