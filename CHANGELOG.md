@@ -1,3 +1,7 @@
+# Version 2.4.0
+
+- Add WASM support. (#14)
+
 # Version 2.3.0
 
 - Merge all subcrates.

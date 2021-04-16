@@ -1,6 +1,9 @@
 [package]
 name = "async-lock"
-version = "2.3.0"
+# When publishing a new version:
+# - Update CHANGELOG.md
+# - Create "v2.x.y" git tag
+version = "2.4.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 description = "Async synchronization primitives"
