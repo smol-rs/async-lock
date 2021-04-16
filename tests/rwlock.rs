@@ -1,11 +1,24 @@
-use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+#[cfg(not(target_arch = "wasm32"))]
+use futures_lite::prelude::*;
+#[cfg(not(target_arch = "wasm32"))]
+use std::future::Future;
+#[cfg(not(target_arch = "wasm32"))]
 use std::thread;
 
-use async_lock::{RwLock, RwLockUpgradableReadGuard};
-use futures_lite::{future, prelude::*};
+use futures_lite::future;
 
+use async_lock::{RwLock, RwLockUpgradableReadGuard};
+
+#[cfg(target_arch = "wasm32")]
+use wasm_bindgen_test::*;
+
+#[cfg(target_arch = "wasm32")]
+wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
+
+#[cfg(not(target_arch = "wasm32"))]
 fn spawn<T: Send + 'static>(f: impl Future<Output = T> + Send + 'static) -> future::Boxed<T> {
     let (s, r) = async_channel::bounded(1);
     thread::spawn(move || {
@@ -17,6 +30,7 @@ fn spawn<T: Send + 'static>(f: impl Future<Output = T> + Send + 'static) -> futu
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn smoke() {
     future::block_on(async {
         let lock = RwLock::new(());
@@ -28,6 +42,7 @@ fn smoke() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn try_write() {
     future::block_on(async {
         let lock = RwLock::new(0isize);
@@ -38,12 +53,14 @@ fn try_write() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn into_inner() {
     let lock = RwLock::new(10);
     assert_eq!(lock.into_inner(), 10);
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn into_inner_and_drop() {
     struct Counter(Arc<AtomicUsize>);
 
@@ -66,12 +83,14 @@ fn into_inner_and_drop() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn get_mut() {
     let mut lock = RwLock::new(10);
     *lock.get_mut() = 20;
     assert_eq!(lock.into_inner(), 20);
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn contention() {
     const N: u32 = 10;
@@ -105,6 +124,7 @@ fn contention() {
     });
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn writer_and_readers() {
     let lock = Arc::new(RwLock::new(0i32));
@@ -151,6 +171,7 @@ fn writer_and_readers() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn upgrade() {
     future::block_on(async {
         let lock: RwLock<i32> = RwLock::new(0);
@@ -181,6 +202,7 @@ fn upgrade() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn not_upgrade() {
     future::block_on(async {
         let mutex: RwLock<i32> = RwLock::new(0);
@@ -212,6 +234,7 @@ fn not_upgrade() {
 }
 
 #[test]
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen_test)]
 fn upgradable_with_concurrent_writer() {
     future::block_on(async {
         let lock: Arc<RwLock<i32>> = Arc::new(RwLock::new(0));
