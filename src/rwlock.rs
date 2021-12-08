@@ -758,3 +758,12 @@ impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
         unsafe { &mut *self.writer.0.value.get() }
     }
 }
+
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<'a, T: ?Sized> stable_deref_trait::StableDeref for RwLockReadGuard<'a, T> {}
+
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<'a, T: ?Sized> stable_deref_trait::StableDeref for RwLockWriteGuard<'a, T> {}
+
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<'a, T: ?Sized> stable_deref_trait::StableDeref for RwLockUpgradableReadGuard<'a, T> {}
