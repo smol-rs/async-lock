@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
@@ -75,4 +74,13 @@ fn contention() {
         let lock = mutex.lock().await;
         assert_eq!(num_tasks, *lock);
     });
+}
+
+#[test]
+fn lifetime() {
+    // Show that the future keeps the mutex alive.
+    let _fut = {
+        let mutex = Arc::new(Mutex::new(0i32));
+        mutex.lock_arc()
+    };
 }

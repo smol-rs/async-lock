@@ -1,5 +1,6 @@
 use std::cell::UnsafeCell;
 use std::fmt;
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -263,6 +264,14 @@ impl<T: ?Sized> Mutex<T> {
 }
 
 impl<T: ?Sized> Mutex<T> {
+    async fn lock_arc_impl(self: Arc<Self>) -> MutexGuardArc<T> {
+        if let Some(guard) = self.try_lock_arc() {
+            return guard;
+        }
+        self.acquire_slow().await;
+        MutexGuardArc(self)
+    }
+
     /// Acquires the mutex and clones a reference to it.
     ///
     /// Returns an owned guard that releases the mutex when dropped.
@@ -280,12 +289,8 @@ impl<T: ?Sized> Mutex<T> {
     /// # })
     /// ```
     #[inline]
-    pub async fn lock_arc(self: &Arc<Self>) -> MutexGuardArc<T> {
-        if let Some(guard) = self.try_lock_arc() {
-            return guard;
-        }
-        self.acquire_slow().await;
-        MutexGuardArc(self.clone())
+    pub fn lock_arc(self: &Arc<Self>) -> impl Future<Output = MutexGuardArc<T>> {
+        self.clone().lock_arc_impl()
     }
 
     /// Attempts to acquire the mutex and clone a reference to it.
