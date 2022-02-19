@@ -3,15 +3,13 @@ name = "async-lock"
 # When publishing a new version:
 # - Update CHANGELOG.md
 # - Create "v2.x.y" git tag
-version = "2.4.0"
+version = "2.5.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 rust-version = "1.43"
 description = "Async synchronization primitives"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/smol-rs/async-lock"
-homepage = "https://github.com/smol-rs/async-lock"
-documentation = "https://docs.rs/async-lock"
 keywords = ["lock", "mutex", "rwlock", "semaphore", "barrier"]
 categories = ["asynchronous", "concurrency"]
 exclude = ["/.*"]
