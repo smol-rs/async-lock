@@ -81,3 +81,12 @@ fn multi_resource() {
         rx1.recv().unwrap();
     });
 }
+
+#[test]
+fn lifetime() {
+    // Show that the future keeps the semaphore alive.
+    let _fut = {
+        let mutex = Arc::new(Semaphore::new(2));
+        mutex.acquire_arc()
+    };
+}

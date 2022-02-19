@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -135,6 +136,21 @@ impl Semaphore {
         }
     }
 
+    async fn acquire_arc_impl(self: Arc<Self>) -> SemaphoreGuardArc {
+        let mut listener = None;
+
+        loop {
+            if let Some(guard) = self.try_acquire_arc() {
+                return guard;
+            }
+
+            match listener.take() {
+                None => listener = Some(self.event.listen()),
+                Some(l) => l.await,
+            }
+        }
+    }
+
     /// Waits for an owned permit for a concurrent operation.
     ///
     /// Returns a guard that releases the permit when dropped.
@@ -150,19 +166,8 @@ impl Semaphore {
     /// let guard = s.acquire_arc().await;
     /// # });
     /// ```
-    pub async fn acquire_arc(self: &Arc<Self>) -> SemaphoreGuardArc {
-        let mut listener = None;
-
-        loop {
-            if let Some(guard) = self.try_acquire_arc() {
-                return guard;
-            }
-
-            match listener.take() {
-                None => listener = Some(self.event.listen()),
-                Some(l) => l.await,
-            }
-        }
+    pub fn acquire_arc(self: &Arc<Self>) -> impl Future<Output = SemaphoreGuardArc> {
+        self.clone().acquire_arc_impl()
     }
 }
 
