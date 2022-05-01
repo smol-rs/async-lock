@@ -26,7 +26,7 @@ jobs:
         run: rustup update ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
       - run: rustup target add wasm32-unknown-unknown
       - name: Install WASM Test Tools
-        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+        uses: taiki-e/install-action@wasm-pack
       - name: Run cargo check
         run: cargo check --all --all-features --all-targets
       - name: Run cargo check (without dev-dependencies to catch missing feature flags)
