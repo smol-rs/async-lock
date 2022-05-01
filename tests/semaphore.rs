@@ -17,6 +17,8 @@ fn try_acquire() {
 
 #[test]
 fn stress() {
+    const COUNT: usize = if cfg!(miri) { 500 } else { 10_000 };
+
     let s = Arc::new(Semaphore::new(5));
     let (tx, rx) = mpsc::channel::<()>();
 
@@ -26,7 +28,7 @@ fn stress() {
 
         thread::spawn(move || {
             future::block_on(async {
-                for _ in 0..10_000 {
+                for _ in 0..COUNT {
                     s.acquire().await;
                 }
                 drop(tx);
