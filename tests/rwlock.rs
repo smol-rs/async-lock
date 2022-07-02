@@ -94,7 +94,7 @@ fn get_mut() {
 #[test]
 fn contention() {
     const N: u32 = 10;
-    const M: usize = 1000;
+    const M: usize = if cfg!(miri) { 100 } else { 1000 };
 
     let (tx, rx) = async_channel::unbounded();
     let tx = Arc::new(tx);
