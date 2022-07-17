@@ -29,10 +29,7 @@ fn smoke() {
             // At this point, all spawned threads should be blocked,
             // so we shouldn't get anything from the cahnnel.
             let res = rx.try_recv();
-            assert!(match res {
-                Err(_err) => true,
-                _ => false,
-            });
+            assert!(res.is_err());
 
             let mut leader_found = barrier.wait().await.is_leader();
 
