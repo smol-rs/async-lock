@@ -76,8 +76,7 @@ jobs:
       - run: cargo miri test
         env:
           # -Zmiri-ignore-leaks is needed because we use detached threads in doctests
-          # TODO: remove -Zmiri-disable-weak-memory-emulation
-          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation -Zmiri-disable-weak-memory-emulation -Zmiri-ignore-leaks
+          MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation -Zmiri-ignore-leaks
           RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
 
   security_audit:
