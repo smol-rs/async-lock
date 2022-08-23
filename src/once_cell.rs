@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
-use std::mem::{self, MaybeUninit};
+use std::mem::{forget, MaybeUninit};
 use std::pin::Pin;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -60,8 +60,14 @@ const INITIALIZED: usize = 2;
 /// }
 /// ```
 pub struct OnceCell<T> {
-    /// Listeners waiting on the cell to be initialized.
-    initialization: Event,
+    /// Listeners waiting for a chance to initialize the cell.
+    /// 
+    /// These are the users of get_or_init() and similar functions.
+    active_initializers: Event,
+    /// Listeners waiting for the cell to be initialized.
+    /// 
+    /// These are the users of wait().
+    passive_waiters: Event,
     /// State associated with the cell.
     state: AtomicUsize,
     /// The value of the cell.
@@ -84,7 +90,8 @@ impl<T> OnceCell<T> {
     /// ```
     pub const fn new() -> Self {
         Self {
-            initialization: Event::new(),
+            active_initializers: Event::new(),
+            passive_waiters: Event::new(),
             state: AtomicUsize::new(UNINITIALIZED),
             value: UnsafeCell::new(MaybeUninit::uninit()),
         }
@@ -249,9 +256,14 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        // Use this way of declaring it to satisfy generic constraints.
-        let closure: WaitClosure<T> = None;
-        let _ = self.initialize_or_wait(closure, &mut NonBlocking).await;
+        let listener = self.passive_waiters.listen();
+
+        // Try again.
+        if let Some(value) = self.get() {
+            return value;
+        }
+
+        listener.await;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -296,10 +308,14 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let closure: WaitClosure<T> = None;
-        // With `Blocking`, this should never block, so we
-        // use `now_or_never`.
-        let _ = now_or_never(self.initialize_or_wait(closure, &mut Blocking));
+        let listener = self.passive_waiters.listen();
+
+        // Try again.
+        if let Some(value) = self.get() {
+            return value;
+        }
+
+        listener.wait();
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -344,7 +360,7 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: initialize the value.
-        self.initialize_or_wait(Some(closure), &mut NonBlocking)
+        self.initialize_or_wait(closure, &mut NonBlocking)
             .await?;
         debug_assert!(self.is_initialized());
 
@@ -399,13 +415,42 @@ impl<T> OnceCell<T> {
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
         now_or_never(
-            self.initialize_or_wait(Some(move || future::ready(closure())), &mut Blocking),
+            self.initialize_or_wait(move || future::ready(closure()), &mut Blocking),
         )?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
         // read it.
         Ok(unsafe { self.get_unchecked() })
+    }
+
+    /// Either get the value or initialize it with the given closure.
+    ///
+    /// Many tasks may call this function, but the value will only be set once
+    /// and only one closure will be invoked.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use async_lock::OnceCell;
+    ///
+    /// # futures_lite::future::block_on(async {
+    /// let cell = OnceCell::new();
+    /// assert_eq!(cell.get_or_init(|| async { 1 }).await, &1);
+    /// assert_eq!(cell.get_or_init(|| async { 2 }).await, &1);
+    /// # });
+    /// ```
+    pub async fn get_or_init<Fut: Future<Output = T>>(&self, closure: impl FnOnce() -> Fut) -> &T {
+        match self
+            .get_or_try_init(move || async move {
+                let result: Result<T, Infallible> = Ok(closure().await);
+                result
+            })
+            .await
+        {
+            Ok(value) => value,
+            Err(infallible) => match infallible {},
+        }
     }
 
     /// Either get the value or initialize it with the given closure.
@@ -432,7 +477,10 @@ impl<T> OnceCell<T> {
     /// assert_eq!(cell.get_or_init_blocking(|| 2), &1);
     /// ```
     pub fn get_or_init_blocking(&self, closure: impl FnOnce() -> T + Unpin) -> &T {
-        match self.get_or_try_init_blocking::<Infallible>(move || Ok(closure())) {
+        match self.get_or_try_init_blocking(move || {
+            let result: Result<T, Infallible> = Ok(closure());
+            result
+        }) {
             Ok(value) => value,
             Err(infallible) => match infallible {},
         }
@@ -507,54 +555,30 @@ impl<T> OnceCell<T> {
         }
     }
 
-    /// Either get the value or initialize it with the given closure.
-    ///
-    /// Many tasks may call this function, but the value will only be set once
-    /// and only one closure will be invoked.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use async_lock::OnceCell;
-    ///
-    /// # futures_lite::future::block_on(async {
-    /// let cell = OnceCell::new();
-    /// assert_eq!(cell.get_or_init(|| async { 1 }).await, &1);
-    /// assert_eq!(cell.get_or_init(|| async { 2 }).await, &1);
-    /// # });
-    /// ```
-    pub async fn get_or_init<Fut: Future<Output = T>>(&self, closure: impl FnOnce() -> Fut) -> &T {
-        match self
-            .get_or_try_init::<Infallible, _>(move || async move { Ok(closure().await) })
-            .await
-        {
-            Ok(value) => value,
-            Err(infallible) => match infallible {},
-        }
-    }
-
     /// Wait for the cell to be initialized, optionally using a closure
     /// to initialize the cell if it is not initialized yet.
     #[cold]
     async fn initialize_or_wait<E, Fut: Future<Output = Result<T, E>>, F: FnOnce() -> Fut>(
         &self,
-        mut closure: Option<F>,
+        closure: F,
         strategy: &mut impl Strategy,
     ) -> Result<(), E> {
         // The event listener we're currently waiting on.
         let mut event_listener = None;
+        
+        let mut closure = Some(closure);
 
         loop {
             // Check the current state of the cell.
             let state = self.state.load(Ordering::Acquire);
 
             // Determine what we should do based on our state.
-            match (state, closure.is_some()) {
-                (INITIALIZED, _) => {
+            match state {
+                INITIALIZED => {
                     // The cell is initialized now, so we can return.
                     return Ok(());
                 }
-                (INITIALIZING, _) | (UNINITIALIZED, false) => {
+                INITIALIZING => { 
                     // The cell is currently initializing, or the cell is uninitialized
                     // but we do not have the ability to initialize it.
                     //
@@ -562,9 +586,9 @@ impl<T> OnceCell<T> {
                     future::poll_fn(|cx| {
                         match event_listener.take() {
                             None => {
-                                event_listener = Some(self.initialization.listen());
+                                event_listener = Some(self.active_initializers.listen());
                             }
-                            Some(evl) => {
+                            Some(evl) => { 
                                 if let Err(evl) = strategy.poll(evl, cx) {
                                     event_listener = Some(evl);
                                     return Poll::Pending;
@@ -576,7 +600,7 @@ impl<T> OnceCell<T> {
                     })
                     .await;
                 }
-                (UNINITIALIZED, true) => {
+                UNINITIALIZED => {
                     // Try to move the cell into the initializing state.
                     if self
                         .state
@@ -603,11 +627,12 @@ impl<T> OnceCell<T> {
                             unsafe {
                                 ptr::write(self.value.get().cast(), value);
                             }
-                            mem::forget(_guard);
+                            forget(_guard);
                             self.state.store(INITIALIZED, Ordering::Release);
 
                             // Notify the listeners that the value is initialized.
-                            self.initialization.notify(std::usize::MAX);
+                            self.active_initializers.notify_additional(std::usize::MAX);
+                            self.passive_waiters.notify_additional(std::usize::MAX);
 
                             return Ok(());
                         }
@@ -634,8 +659,8 @@ impl<T> OnceCell<T> {
             fn drop(&mut self) {
                 self.0.state.store(UNINITIALIZED, Ordering::Release);
 
-                // Notify the next listener that it's their turn.
-                self.0.initialization.notify(1);
+                // Notify the next initializer that it's their turn.
+                self.0.active_initializers.notify(1);
             }
         }
     }
@@ -666,8 +691,6 @@ impl<T> OnceCell<T> {
     }
 }
 
-type WaitClosure<T> = Option<fn() -> future::Pending<Result<T, Infallible>>>;
-
 impl<T> From<T> for OnceCell<T> {
     /// Create a new, initialized `OnceCell` from an existing value.
     ///
@@ -681,7 +704,8 @@ impl<T> From<T> for OnceCell<T> {
     /// ```
     fn from(value: T) -> Self {
         Self {
-            initialization: Event::new(),
+            active_initializers: Event::new(),
+            passive_waiters: Event::new(), 
             state: AtomicUsize::new(INITIALIZED),
             value: UnsafeCell::new(MaybeUninit::new(value)),
         }
