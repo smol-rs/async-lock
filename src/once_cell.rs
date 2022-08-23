@@ -61,11 +61,11 @@ const INITIALIZED: usize = 2;
 /// ```
 pub struct OnceCell<T> {
     /// Listeners waiting for a chance to initialize the cell.
-    /// 
+    ///
     /// These are the users of get_or_init() and similar functions.
     active_initializers: Event,
     /// Listeners waiting for the cell to be initialized.
-    /// 
+    ///
     /// These are the users of wait().
     passive_waiters: Event,
     /// State associated with the cell.
@@ -360,8 +360,7 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: initialize the value.
-        self.initialize_or_wait(closure, &mut NonBlocking)
-            .await?;
+        self.initialize_or_wait(closure, &mut NonBlocking).await?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -414,9 +413,7 @@ impl<T> OnceCell<T> {
 
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
-        now_or_never(
-            self.initialize_or_wait(move || future::ready(closure()), &mut Blocking),
-        )?;
+        now_or_never(self.initialize_or_wait(move || future::ready(closure()), &mut Blocking))?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -565,7 +562,7 @@ impl<T> OnceCell<T> {
     ) -> Result<(), E> {
         // The event listener we're currently waiting on.
         let mut event_listener = None;
-        
+
         let mut closure = Some(closure);
 
         loop {
@@ -578,7 +575,7 @@ impl<T> OnceCell<T> {
                     // The cell is initialized now, so we can return.
                     return Ok(());
                 }
-                INITIALIZING => { 
+                INITIALIZING => {
                     // The cell is currently initializing, or the cell is uninitialized
                     // but we do not have the ability to initialize it.
                     //
@@ -588,7 +585,7 @@ impl<T> OnceCell<T> {
                             None => {
                                 event_listener = Some(self.active_initializers.listen());
                             }
-                            Some(evl) => { 
+                            Some(evl) => {
                                 if let Err(evl) = strategy.poll(evl, cx) {
                                     event_listener = Some(evl);
                                     return Poll::Pending;
@@ -705,7 +702,7 @@ impl<T> From<T> for OnceCell<T> {
     fn from(value: T) -> Self {
         Self {
             active_initializers: Event::new(),
-            passive_waiters: Event::new(), 
+            passive_waiters: Event::new(),
             state: AtomicUsize::new(INITIALIZED),
             value: UnsafeCell::new(MaybeUninit::new(value)),
         }
