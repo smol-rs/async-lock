@@ -11,12 +11,34 @@ use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use event_listener::{Event, EventListener};
 use futures_lite::future;
 
-/// The `OnceCell` is uninitialized.
-const UNINITIALIZED: usize = 0;
-/// The `OnceCell` is being initialized.
-const INITIALIZING: usize = 1;
-/// The `OnceCell` is initialized.
-const INITIALIZED: usize = 2;
+/// The current state of the `OnceCell`.
+#[derive(Copy, Clone, PartialEq, Eq)]
+#[repr(usize)]
+enum State {
+    /// The `OnceCell` is uninitialized.
+    Uninitialized = 0,
+    /// The `OnceCell` is being initialized.
+    Initializing = 1,
+    /// The `OnceCell` is initialized.
+    Initialized = 2,
+}
+
+impl From<usize> for State {
+    fn from(val: usize) -> Self {
+        match val {
+            0 => State::Uninitialized,
+            1 => State::Initializing,
+            2 => State::Initialized,
+            _ => unreachable!("Invalid state"),
+        }
+    }
+}
+
+impl From<State> for usize {
+    fn from(val: State) -> Self {
+        val as usize
+    }
+}
 
 /// A memory location that can be written to at most once.
 ///
@@ -92,7 +114,7 @@ impl<T> OnceCell<T> {
         Self {
             active_initializers: Event::new(),
             passive_waiters: Event::new(),
-            state: AtomicUsize::new(UNINITIALIZED),
+            state: AtomicUsize::new(State::Uninitialized as _),
             value: UnsafeCell::new(MaybeUninit::uninit()),
         }
     }
@@ -116,7 +138,7 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn is_initialized(&self) -> bool {
-        self.state.load(Ordering::Acquire) == INITIALIZED
+        State::from(self.state.load(Ordering::Acquire)) == State::Initialized
     }
 
     /// Get a reference to the inner value, or `None` if the value
@@ -165,7 +187,7 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn get_mut(&mut self) -> Option<&mut T> {
-        if *self.state.get_mut() == INITIALIZED {
+        if State::from(*self.state.get_mut()) == State::Initialized {
             // SAFETY: We know that the value is initialized, so it is safe to
             // read it.
             Some(unsafe { &mut *self.value.get().cast() })
@@ -190,11 +212,11 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn take(&mut self) -> Option<T> {
-        if *self.state.get_mut() == INITIALIZED {
+        if State::from(*self.state.get_mut()) == State::Initialized {
             // SAFETY: We know that the value is initialized, so it is safe to
             // read it.
             let value = unsafe { ptr::read(self.value.get().cast()) };
-            *self.state.get_mut() = UNINITIALIZED;
+            *self.state.get_mut() = State::Uninitialized.into();
             Some(value)
         } else {
             None
@@ -215,15 +237,7 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn into_inner(mut self) -> Option<T> {
-        if *self.state.get_mut() == INITIALIZED {
-            // SAFETY: We know that the value is initialized, so it is safe to
-            // read it.
-            let value = unsafe { ptr::read(self.value.get().cast()) };
-            *self.state.get_mut() = UNINITIALIZED;
-            Some(value)
-        } else {
-            None
-        }
+        self.take()
     }
 
     /// Wait for the cell to be initialized, and then return a reference to the
@@ -570,12 +584,12 @@ impl<T> OnceCell<T> {
             let state = self.state.load(Ordering::Acquire);
 
             // Determine what we should do based on our state.
-            match state {
-                INITIALIZED => {
+            match state.into() {
+                State::Initialized => {
                     // The cell is initialized now, so we can return.
                     return Ok(());
                 }
-                INITIALIZING => {
+                State::Initializing => {
                     // The cell is currently initializing, or the cell is uninitialized
                     // but we do not have the ability to initialize it.
                     //
@@ -597,13 +611,13 @@ impl<T> OnceCell<T> {
                     })
                     .await;
                 }
-                UNINITIALIZED => {
+                State::Uninitialized => {
                     // Try to move the cell into the initializing state.
                     if self
                         .state
                         .compare_exchange(
-                            UNINITIALIZED,
-                            INITIALIZING,
+                            State::Uninitialized.into(),
+                            State::Initializing.into(),
                             Ordering::AcqRel,
                             Ordering::Acquire,
                         )
@@ -625,7 +639,8 @@ impl<T> OnceCell<T> {
                                 ptr::write(self.value.get().cast(), value);
                             }
                             forget(_guard);
-                            self.state.store(INITIALIZED, Ordering::Release);
+                            self.state
+                                .store(State::Initialized.into(), Ordering::Release);
 
                             // Notify the listeners that the value is initialized.
                             self.active_initializers.notify_additional(std::usize::MAX);
@@ -642,7 +657,6 @@ impl<T> OnceCell<T> {
                         }
                     }
                 }
-                _ => panic!("Invalid state"),
             }
         }
 
@@ -654,7 +668,9 @@ impl<T> OnceCell<T> {
 
         impl<'a, T> Drop for Guard<'a, T> {
             fn drop(&mut self) {
-                self.0.state.store(UNINITIALIZED, Ordering::Release);
+                self.0
+                    .state
+                    .store(State::Uninitialized.into(), Ordering::Release);
 
                 // Notify the next initializer that it's their turn.
                 self.0.active_initializers.notify(1);
@@ -703,7 +719,7 @@ impl<T> From<T> for OnceCell<T> {
         Self {
             active_initializers: Event::new(),
             passive_waiters: Event::new(),
-            state: AtomicUsize::new(INITIALIZED),
+            state: AtomicUsize::new(State::Initialized.into()),
             value: UnsafeCell::new(MaybeUninit::new(value)),
         }
     }
@@ -715,20 +731,25 @@ impl<T: fmt::Debug> fmt::Debug for OnceCell<T> {
 
         impl<T: fmt::Debug> fmt::Debug for Inner<'_, T> {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                match self.0.state.load(Ordering::Acquire) {
-                    UNINITIALIZED => f.write_str("<uninitialized>"),
-                    INITIALIZING => f.write_str("<initializing>"),
-                    INITIALIZED => {
+                match self.0.state.load(Ordering::Acquire).into() {
+                    State::Uninitialized => f.write_str("<uninitialized>"),
+                    State::Initializing => f.write_str("<initializing>"),
+                    State::Initialized => {
                         // SAFETY: "value" is initialized.
                         let value = unsafe { self.0.get_unchecked() };
                         fmt::Debug::fmt(value, f)
                     }
-                    _ => unreachable!("Invalid state"),
                 }
             }
         }
 
         f.debug_tuple("OnceCell").field(&Inner(self)).finish()
+    }
+}
+
+impl<T> Drop for OnceCell<T> {
+    fn drop(&mut self) {
+        drop(self.take());
     }
 }
 
@@ -780,21 +801,5 @@ impl Strategy for NonBlocking {
             Poll::Pending => Err(evl),
             Poll::Ready(()) => Ok(()),
         }
-    }
-}
-
-struct CallOnDrop<F: Fn()>(F);
-
-impl<F: Fn()> Drop for CallOnDrop<F> {
-    fn drop(&mut self) {
-        (self.0)();
-    }
-}
-
-struct NoPanic;
-
-impl Drop for NoPanic {
-    fn drop(&mut self) {
-        std::process::abort();
     }
 }
