@@ -15,12 +15,12 @@ categories = ["asynchronous", "concurrency"]
 exclude = ["/.*"]
 
 [dependencies]
+futures-lite = "1.11.0"
 event-listener = "2.5.1"
 
 [dev-dependencies]
 async-channel = "1.5.0"
 fastrand = "1.4.0"
-futures-lite = "1.11.0"
 
 [target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
 wasm-bindgen-test = "0.3"
