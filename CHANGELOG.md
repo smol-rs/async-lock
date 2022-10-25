@@ -1,3 +1,8 @@
+# Version 2.6.0
+
+- Add `OnceCell`. (#27)
+- Support wasm64.
+
 # Version 2.5.0
 
 - Fix an issue where the future returned by `Mutex::lock_arc`/`Semaphore::acquire_arc` holds a reference to `self`. (#20, #21)
