@@ -749,7 +749,11 @@ impl<T: fmt::Debug> fmt::Debug for OnceCell<T> {
 
 impl<T> Drop for OnceCell<T> {
     fn drop(&mut self) {
-        drop(self.take());
+        if State::from(*self.state.get_mut()) == State::Initialized {
+            // SAFETY: We know that the value is initialized, so it is safe to
+            // drop it.
+            unsafe { self.value.get().cast::<T>().drop_in_place() }
+        }
     }
 }
 
