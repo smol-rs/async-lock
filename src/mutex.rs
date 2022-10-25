@@ -6,6 +6,7 @@ use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+// Note: we cannot use `target_family = "wasm"` here because it requires Rust 1.54.
 #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
 use std::time::{Duration, Instant};
 
