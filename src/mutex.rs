@@ -412,6 +412,9 @@ impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
     }
 }
 
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<T: ?Sized> stable_deref_trait::StableDeref for MutexGuard<'_, T> {}
+
 /// An owned guard that releases the mutex when dropped.
 pub struct MutexGuardArc<T: ?Sized>(Arc<Mutex<T>>);
 
@@ -471,6 +474,9 @@ impl<T: ?Sized> DerefMut for MutexGuardArc<T> {
         unsafe { &mut *self.0.data.get() }
     }
 }
+
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<T: ?Sized> stable_deref_trait::StableDeref for MutexGuardArc<T> {}
 
 /// Calls a function when dropped.
 struct CallOnDrop<F: Fn()>(F);

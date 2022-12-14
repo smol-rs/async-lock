@@ -484,6 +484,9 @@ impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
     }
 }
 
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<T: ?Sized> stable_deref_trait::StableDeref for RwLockReadGuard<'_, T> {}
+
 /// A guard that releases the upgradable read lock when dropped.
 pub struct RwLockUpgradableReadGuard<'a, T: ?Sized> {
     reader: RwLockReadGuard<'a, T>,
@@ -632,6 +635,9 @@ impl<T: ?Sized> Deref for RwLockUpgradableReadGuard<'_, T> {
     }
 }
 
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<T: ?Sized> stable_deref_trait::StableDeref for RwLockUpgradableReadGuard<'_, T> {}
+
 struct RwLockWriteGuardInner<'a, T: ?Sized>(&'a RwLock<T>);
 
 impl<T: ?Sized> Drop for RwLockWriteGuardInner<'_, T> {
@@ -758,3 +764,6 @@ impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
         unsafe { &mut *self.writer.0.value.get() }
     }
 }
+
+#[cfg(feature = "stable_deref_trait")]
+unsafe impl<T: ?Sized> stable_deref_trait::StableDeref for RwLockWriteGuard<'_, T> {}
