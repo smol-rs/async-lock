@@ -1,8 +1,11 @@
+use std::fmt;
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use event_listener::Event;
+use event_listener::{Event, EventListener};
 
 /// A counter for limiting the number of concurrent operations.
 #[derive(Debug)]
@@ -80,18 +83,10 @@ impl Semaphore {
     /// let guard = s.acquire().await;
     /// # });
     /// ```
-    pub async fn acquire(&self) -> SemaphoreGuard<'_> {
-        let mut listener = None;
-
-        loop {
-            if let Some(guard) = self.try_acquire() {
-                return guard;
-            }
-
-            match listener.take() {
-                None => listener = Some(self.event.listen()),
-                Some(l) => l.await,
-            }
+    pub fn acquire(&self) -> Acquire<'_> {
+        Acquire {
+            semaphore: self,
+            listener: None,
         }
     }
 }
@@ -136,21 +131,6 @@ impl Semaphore {
         }
     }
 
-    async fn acquire_arc_impl(self: Arc<Self>) -> SemaphoreGuardArc {
-        let mut listener = None;
-
-        loop {
-            if let Some(guard) = self.try_acquire_arc() {
-                return guard;
-            }
-
-            match listener.take() {
-                None => listener = Some(self.event.listen()),
-                Some(l) => l.await,
-            }
-        }
-    }
-
     /// Waits for an owned permit for a concurrent operation.
     ///
     /// Returns a guard that releases the permit when dropped.
@@ -166,8 +146,103 @@ impl Semaphore {
     /// let guard = s.acquire_arc().await;
     /// # });
     /// ```
-    pub fn acquire_arc(self: &Arc<Self>) -> impl Future<Output = SemaphoreGuardArc> {
-        self.clone().acquire_arc_impl()
+    pub fn acquire_arc(self: &Arc<Self>) -> AcquireArc {
+        AcquireArc {
+            semaphore: self.clone(),
+            listener: None,
+        }
+    }
+}
+
+/// The future returned by [`Semaphore::acquire`].
+pub struct Acquire<'a> {
+    /// The semaphore being acquired.
+    semaphore: &'a Semaphore,
+
+    /// The listener waiting on the semaphore.
+    listener: Option<EventListener>,
+}
+
+impl fmt::Debug for Acquire<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Acquire { .. }")
+    }
+}
+
+impl Unpin for Acquire<'_> {}
+
+impl<'a> Future for Acquire<'a> {
+    type Output = SemaphoreGuard<'a>;
+
+    #[allow(clippy::redundant_pattern_matching)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match this.semaphore.try_acquire() {
+                Some(guard) => return Poll::Ready(guard),
+                None => {
+                    // Wait on the listener.
+                    match this.listener.take() {
+                        None => {
+                            this.listener = Some(this.semaphore.event.listen());
+                        }
+                        Some(mut listener) => {
+                            if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
+                                this.listener = Some(listener);
+                                return Poll::Pending;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The future returned by [`Semaphore::acquire_arc`].
+pub struct AcquireArc {
+    /// The semaphore being acquired.
+    semaphore: Arc<Semaphore>,
+
+    /// The listener waiting on the semaphore.
+    listener: Option<EventListener>,
+}
+
+impl fmt::Debug for AcquireArc {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("AcquireArc { .. }")
+    }
+}
+
+impl Unpin for AcquireArc {}
+
+impl Future for AcquireArc {
+    type Output = SemaphoreGuardArc;
+
+    #[allow(clippy::redundant_pattern_matching)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match this.semaphore.try_acquire_arc() {
+                Some(guard) => return Poll::Ready(guard),
+                None => {
+                    // Wait on the listener.
+                    match this.listener.take() {
+                        None => {
+                            this.listener = Some(this.semaphore.event.listen());
+                        }
+                        Some(mut listener) => {
+                            if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
+                                this.listener = Some(listener);
+                                return Poll::Pending;
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -1,6 +1,12 @@
-use event_listener::Event;
+use event_listener::{Event, EventListener};
+use futures_lite::ready;
 
-use crate::Mutex;
+use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+use crate::{Lock, Mutex};
 
 /// A counter to synchronize multiple tasks at the same time.
 #[derive(Debug)]
@@ -72,24 +78,101 @@ impl Barrier {
     ///     });
     /// }
     /// ```
-    pub async fn wait(&self) -> BarrierWaitResult {
-        let mut state = self.state.lock().await;
-        let local_gen = state.generation_id;
-        state.count += 1;
+    pub fn wait(&self) -> BarrierWait<'_> {
+        BarrierWait {
+            barrier: self,
+            lock: self.state.lock(),
+            state: WaitState::Initial,
+        }
+    }
+}
 
-        if state.count < self.n {
-            while local_gen == state.generation_id && state.count < self.n {
-                let listener = self.event.listen();
-                drop(state);
-                listener.await;
-                state = self.state.lock().await;
+/// The future returned by [`Barrier::wait()`].
+pub struct BarrierWait<'a> {
+    /// The barrier to wait on.
+    barrier: &'a Barrier,
+
+    /// The ongoing mutex lock operation we are blocking on.
+    lock: Lock<'a, State>,
+
+    /// The current state of the future.
+    state: WaitState,
+}
+
+impl fmt::Debug for BarrierWait<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("BarrierWait { .. }")
+    }
+}
+
+enum WaitState {
+    /// We are getting the original values of the state.
+    Initial,
+
+    /// We are waiting for the listener to complete.
+    Waiting { evl: EventListener, local_gen: u64 },
+
+    /// Waiting to re-acquire the lock to check the state again.
+    Reacquiring(u64),
+}
+
+impl Future for BarrierWait<'_> {
+    type Output = BarrierWaitResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match this.state {
+                WaitState::Initial => {
+                    // See if the lock is ready yet.
+                    let mut state = ready!(Pin::new(&mut this.lock).poll(cx));
+
+                    let local_gen = state.generation_id;
+                    state.count += 1;
+
+                    if state.count < this.barrier.n {
+                        // We need to wait for the event.
+                        this.state = WaitState::Waiting {
+                            evl: this.barrier.event.listen(),
+                            local_gen,
+                        };
+                    } else {
+                        // We are the last one.
+                        state.count = 0;
+                        state.generation_id = state.generation_id.wrapping_add(1);
+                        this.barrier.event.notify(std::usize::MAX);
+                        return Poll::Ready(BarrierWaitResult { is_leader: true });
+                    }
+                }
+
+                WaitState::Waiting {
+                    ref mut evl,
+                    local_gen,
+                } => {
+                    ready!(Pin::new(evl).poll(cx));
+
+                    // We are now re-acquiring the mutex.
+                    this.lock = this.barrier.state.lock();
+                    this.state = WaitState::Reacquiring(local_gen);
+                }
+
+                WaitState::Reacquiring(local_gen) => {
+                    // Acquire the local state again.
+                    let state = ready!(Pin::new(&mut this.lock).poll(cx));
+
+                    if local_gen == state.generation_id && state.count < this.barrier.n {
+                        // We need to wait for the event again.
+                        this.state = WaitState::Waiting {
+                            evl: this.barrier.event.listen(),
+                            local_gen,
+                        };
+                    } else {
+                        // We are ready, but not the leader.
+                        return Poll::Ready(BarrierWaitResult { is_leader: false });
+                    }
+                }
             }
-            BarrierWaitResult { is_leader: false }
-        } else {
-            state.count = 0;
-            state.generation_id = state.generation_id.wrapping_add(1);
-            self.event.notify(std::usize::MAX);
-            BarrierWaitResult { is_leader: true }
         }
     }
 }

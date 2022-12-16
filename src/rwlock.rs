@@ -1,13 +1,17 @@
 use std::cell::UnsafeCell;
 use std::fmt;
+use std::future::Future;
 use std::mem;
 use std::ops::{Deref, DerefMut};
+use std::pin::Pin;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::{Context, Poll};
 
-use event_listener::Event;
+use event_listener::{Event, EventListener};
+use futures_lite::ready;
 
-use crate::{Mutex, MutexGuard};
+use crate::{Lock, Mutex, MutexGuard};
 
 const WRITER_BIT: usize = 1;
 const ONE_READER: usize = 2;
@@ -170,42 +174,11 @@ impl<T: ?Sized> RwLock<T> {
     /// assert!(lock.try_read().is_some());
     /// # })
     /// ```
-    pub async fn read(&self) -> RwLockReadGuard<'_, T> {
-        let mut state = self.state.load(Ordering::Acquire);
-
-        loop {
-            if state & WRITER_BIT == 0 {
-                // Make sure the number of readers doesn't overflow.
-                if state > std::isize::MAX as usize {
-                    process::abort();
-                }
-
-                // If nobody is holding a write lock or attempting to acquire it, increment the
-                // number of readers.
-                match self.state.compare_exchange(
-                    state,
-                    state + ONE_READER,
-                    Ordering::AcqRel,
-                    Ordering::Acquire,
-                ) {
-                    Ok(_) => return RwLockReadGuard(self),
-                    Err(s) => state = s,
-                }
-            } else {
-                // Start listening for "no writer" events.
-                let listener = self.no_writer.listen();
-
-                // Check again if there's a writer.
-                if self.state.load(Ordering::SeqCst) & WRITER_BIT != 0 {
-                    // Wait until the writer is dropped.
-                    listener.await;
-                    // Notify the next reader waiting in line.
-                    self.no_writer.notify(1);
-                }
-
-                // Reload the state.
-                state = self.state.load(Ordering::Acquire);
-            }
+    pub fn read(&self) -> Read<'_, T> {
+        Read {
+            lock: self,
+            state: self.state.load(Ordering::Acquire),
+            listener: None,
         }
     }
 
@@ -289,33 +262,10 @@ impl<T: ?Sized> RwLock<T> {
     /// *writer = 2;
     /// # })
     /// ```
-    pub async fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, T> {
-        // First grab the mutex.
-        let lock = self.mutex.lock().await;
-
-        let mut state = self.state.load(Ordering::Acquire);
-
-        // Make sure the number of readers doesn't overflow.
-        if state > std::isize::MAX as usize {
-            process::abort();
-        }
-
-        // Increment the number of readers.
-        loop {
-            match self.state.compare_exchange(
-                state,
-                state + ONE_READER,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => {
-                    return RwLockUpgradableReadGuard {
-                        reader: RwLockReadGuard(self),
-                        reserved: lock,
-                    }
-                }
-                Err(s) => state = s,
-            }
+    pub fn upgradable_read(&self) -> UpgradableRead<'_, T> {
+        UpgradableRead {
+            lock: self,
+            acquire: self.mutex.lock(),
         }
     }
 
@@ -372,30 +322,11 @@ impl<T: ?Sized> RwLock<T> {
     /// assert!(lock.try_read().is_none());
     /// # })
     /// ```
-    pub async fn write(&self) -> RwLockWriteGuard<'_, T> {
-        // First grab the mutex.
-        let lock = self.mutex.lock().await;
-
-        // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
-        self.state.fetch_or(WRITER_BIT, Ordering::SeqCst);
-        let guard = RwLockWriteGuard {
-            writer: RwLockWriteGuardInner(self),
-            reserved: lock,
-        };
-
-        // If there are readers, we need to wait for them to finish.
-        while self.state.load(Ordering::SeqCst) != WRITER_BIT {
-            // Start listening for "no readers" events.
-            let listener = self.no_readers.listen();
-
-            // Check again if there are readers.
-            if self.state.load(Ordering::Acquire) != WRITER_BIT {
-                // Wait for the readers to finish.
-                listener.await;
-            }
+    pub fn write(&self) -> Write<'_, T> {
+        Write {
+            lock: self,
+            state: WriteState::Acquiring(self.mutex.lock()),
         }
-
-        guard
     }
 
     /// Returns a mutable reference to the inner value.
@@ -445,6 +376,252 @@ impl<T> From<T> for RwLock<T> {
 impl<T: Default + ?Sized> Default for RwLock<T> {
     fn default() -> RwLock<T> {
         RwLock::new(Default::default())
+    }
+}
+
+/// Future returned by [`RwLock::read`].
+pub struct Read<'a, T: ?Sized> {
+    /// The lock that is being acquired.
+    lock: &'a RwLock<T>,
+
+    /// The last-observed state of the lock.
+    state: usize,
+
+    /// The listener for the "no writers" event.
+    listener: Option<EventListener>,
+}
+
+impl<T: ?Sized> fmt::Debug for Read<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Read { .. }")
+    }
+}
+
+impl<T: ?Sized> Unpin for Read<'_, T> {}
+
+impl<'a, T: ?Sized> Future for Read<'a, T> {
+    type Output = RwLockReadGuard<'a, T>;
+
+    #[allow(clippy::redundant_pattern_matching)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            if this.state & WRITER_BIT == 0 {
+                // Make sure the number of readers doesn't overflow.
+                if this.state > std::isize::MAX as usize {
+                    process::abort();
+                }
+
+                // If nobody is holding a write lock or attempting to acquire it, increment the
+                // number of readers.
+                match this.lock.state.compare_exchange(
+                    this.state,
+                    this.state + ONE_READER,
+                    Ordering::AcqRel,
+                    Ordering::Acquire,
+                ) {
+                    Ok(_) => return Poll::Ready(RwLockReadGuard(this.lock)),
+                    Err(s) => this.state = s,
+                }
+            } else {
+                // Start listening for "no writer" events.
+                let load_ordering = match this.listener.take() {
+                    None => {
+                        this.listener = Some(this.lock.no_writer.listen());
+
+                        // Make sure there really is no writer.
+                        Ordering::SeqCst
+                    }
+
+                    Some(mut listener) => {
+                        // Wait for the writer to finish.
+                        if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
+                            this.listener = Some(listener);
+                            return Poll::Pending;
+                        }
+
+                        // Notify the next reader waiting in list.
+                        this.lock.no_writer.notify(1);
+
+                        // Check the state again.
+                        Ordering::Acquire
+                    }
+                };
+
+                // Reload the state.
+                this.state = this.lock.state.load(load_ordering);
+            }
+        }
+    }
+}
+
+/// Future returned by [`RwLock::upgradable_read`].
+pub struct UpgradableRead<'a, T: ?Sized> {
+    /// The lock that is being acquired.
+    lock: &'a RwLock<T>,
+
+    /// The mutex we are trying to acquire.
+    acquire: Lock<'a, ()>,
+}
+
+impl<T: ?Sized> fmt::Debug for UpgradableRead<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("UpgradableRead { .. }")
+    }
+}
+
+impl<T: ?Sized> Unpin for UpgradableRead<'_, T> {}
+
+impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
+    type Output = RwLockUpgradableReadGuard<'a, T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        // Acquire the mutex.
+        let mutex_guard = ready!(Pin::new(&mut this.acquire).poll(cx));
+
+        let mut state = this.lock.state.load(Ordering::Acquire);
+
+        // Make sure the number of readers doesn't overflow.
+        if state > std::isize::MAX as usize {
+            process::abort();
+        }
+
+        // Increment the number of readers.
+        loop {
+            match this.lock.state.compare_exchange(
+                state,
+                state + ONE_READER,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Poll::Ready(RwLockUpgradableReadGuard {
+                        reader: RwLockReadGuard(this.lock),
+                        reserved: mutex_guard,
+                    });
+                }
+                Err(s) => state = s,
+            }
+        }
+    }
+}
+
+/// Future returned by [`RwLock::write`].
+pub struct Write<'a, T: ?Sized> {
+    /// The lock that is being acquired.
+    lock: &'a RwLock<T>,
+
+    /// Current state fof this future.
+    state: WriteState<'a, T>,
+}
+
+enum WriteState<'a, T: ?Sized> {
+    /// We are currently acquiring the inner mutex.
+    Acquiring(Lock<'a, ()>),
+
+    /// We are currently waiting for readers to finish.
+    WaitingReaders {
+        /// Our current write guard.
+        guard: RwLockWriteGuard<'a, T>,
+
+        /// The listener for the "no readers" event.
+        listener: Option<EventListener>,
+    },
+
+    /// Empty hole to allow taking this state out.
+    Hole,
+}
+
+impl<T: ?Sized> fmt::Debug for Write<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("Write { .. }")
+    }
+}
+
+impl<T: ?Sized> Unpin for Write<'_, T> {}
+
+impl<'a, T: ?Sized> Future for Write<'a, T> {
+    type Output = RwLockWriteGuard<'a, T>;
+
+    #[allow(clippy::redundant_pattern_matching)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+
+        loop {
+            match mem::replace(&mut this.state, WriteState::Hole) {
+                WriteState::Acquiring(mut lock) => {
+                    // First grab the mutex.
+                    let mutex_guard = match Pin::new(&mut lock).poll(cx) {
+                        Poll::Ready(guard) => guard,
+                        Poll::Pending => {
+                            this.state = WriteState::Acquiring(lock);
+                            return Poll::Pending;
+                        }
+                    };
+
+                    // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
+                    let new_state = this.lock.state.fetch_or(WRITER_BIT, Ordering::SeqCst);
+                    let guard = RwLockWriteGuard {
+                        writer: RwLockWriteGuardInner(this.lock),
+                        reserved: mutex_guard,
+                    };
+
+                    // If we just acquired the writer lock, return it.
+                    if new_state == WRITER_BIT {
+                        return Poll::Ready(guard);
+                    }
+
+                    // Start waiting for the readers to finish.
+                    this.state = WriteState::WaitingReaders {
+                        guard,
+                        listener: Some(this.lock.no_readers.listen()),
+                    };
+                }
+
+                WriteState::WaitingReaders {
+                    guard,
+                    mut listener,
+                } => {
+                    let load_ordering = if listener.is_some() {
+                        Ordering::Acquire
+                    } else {
+                        Ordering::SeqCst
+                    };
+
+                    // Check the state again.
+                    if this.lock.state.load(load_ordering) == WRITER_BIT {
+                        // We are the only ones holding the lock, return it.
+                        return Poll::Ready(guard);
+                    }
+
+                    // Wait for the readers to finish.
+                    match listener.take() {
+                        None => {
+                            // Register a listener.
+                            listener = Some(this.lock.no_readers.listen());
+                        }
+
+                        Some(mut listener) => {
+                            // Wait for the readers to finish.
+                            if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
+                                this.state = WriteState::WaitingReaders {
+                                    guard,
+                                    listener: Some(listener),
+                                };
+                                return Poll::Pending;
+                            }
+                        }
+                    };
+
+                    this.state = WriteState::WaitingReaders { guard, listener };
+                }
+
+                WriteState::Hole => unreachable!("future polled after completion"),
+            }
+        }
     }
 }
 
@@ -585,7 +762,7 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// *writer = 2;
     /// # })
     /// ```
-    pub async fn upgrade(guard: Self) -> RwLockWriteGuard<'a, T> {
+    pub fn upgrade(guard: Self) -> Upgrade<'a, T> {
         // Set `WRITER_BIT` and decrement the number of readers at the same time.
         guard
             .reader
@@ -596,19 +773,10 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
         // Convert into a write guard that unsets `WRITER_BIT` in case this future is canceled.
         let guard = guard.into_writer();
 
-        // If there are readers, we need to wait for them to finish.
-        while guard.writer.0.state.load(Ordering::SeqCst) != WRITER_BIT {
-            // Start listening for "no readers" events.
-            let listener = guard.writer.0.no_readers.listen();
-
-            // Check again if there are readers.
-            if guard.writer.0.state.load(Ordering::Acquire) != WRITER_BIT {
-                // Wait for the readers to finish.
-                listener.await;
-            }
+        Upgrade {
+            guard: Some(guard),
+            listener: None,
         }
-
-        guard
     }
 }
 
@@ -629,6 +797,70 @@ impl<T: ?Sized> Deref for RwLockUpgradableReadGuard<'_, T> {
 
     fn deref(&self) -> &T {
         unsafe { &*self.reader.0.value.get() }
+    }
+}
+
+/// The future returned by [`RwLockUpgradableReadGuard::upgrade`].
+pub struct Upgrade<'a, T: ?Sized> {
+    /// The guard that we are upgrading to.
+    guard: Option<RwLockWriteGuard<'a, T>>,
+
+    /// The event listener we are waiting on.
+    listener: Option<EventListener>,
+}
+
+impl<T: ?Sized> fmt::Debug for Upgrade<'_, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Upgrade").finish()
+    }
+}
+
+impl<T: ?Sized> Unpin for Upgrade<'_, T> {}
+
+impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
+    type Output = RwLockWriteGuard<'a, T>;
+
+    #[allow(clippy::redundant_pattern_matching)]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = self.get_mut();
+        let guard = this
+            .guard
+            .as_mut()
+            .expect("cannot poll future after completion");
+
+        // If there are readers, we need to wait for them to finish.
+        loop {
+            let load_ordering = if this.listener.is_some() {
+                Ordering::Acquire
+            } else {
+                Ordering::SeqCst
+            };
+
+            // See if the number of readers is zero.
+            let state = guard.writer.0.state.load(load_ordering);
+            if state == WRITER_BIT {
+                break;
+            }
+
+            // If there are readers, wait for them to finish.
+            match this.listener.take() {
+                None => {
+                    // Start listening for "no readers" events.
+                    this.listener = Some(guard.writer.0.no_readers.listen());
+                }
+
+                Some(mut listener) => {
+                    // Wait for the readers to finish.
+                    if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
+                        this.listener = Some(listener);
+                        return Poll::Pending;
+                    }
+                }
+            }
+        }
+
+        // We are done.
+        Poll::Ready(this.guard.take().unwrap())
     }
 }
 
