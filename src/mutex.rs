@@ -409,6 +409,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
     #[cold]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = &mut *self;
+        #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
         let start = *this.start.get_or_insert_with(Instant::now);
         let mutex = this
             .mutex
