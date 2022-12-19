@@ -81,7 +81,7 @@ impl Barrier {
     pub fn wait(&self) -> BarrierWait<'_> {
         BarrierWait {
             barrier: self,
-            lock: self.state.lock(),
+            lock: Some(self.state.lock()),
             state: WaitState::Initial,
         }
     }
@@ -93,7 +93,7 @@ pub struct BarrierWait<'a> {
     barrier: &'a Barrier,
 
     /// The ongoing mutex lock operation we are blocking on.
-    lock: Lock<'a, State>,
+    lock: Option<Lock<'a, State>>,
 
     /// The current state of the future.
     state: WaitState,
@@ -126,7 +126,8 @@ impl Future for BarrierWait<'_> {
             match this.state {
                 WaitState::Initial => {
                     // See if the lock is ready yet.
-                    let mut state = ready!(Pin::new(&mut this.lock).poll(cx));
+                    let mut state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
+                    this.lock = None;
 
                     let local_gen = state.generation_id;
                     state.count += 1;
@@ -153,13 +154,14 @@ impl Future for BarrierWait<'_> {
                     ready!(Pin::new(evl).poll(cx));
 
                     // We are now re-acquiring the mutex.
-                    this.lock = this.barrier.state.lock();
+                    this.lock = Some(this.barrier.state.lock());
                     this.state = WaitState::Reacquiring(local_gen);
                 }
 
                 WaitState::Reacquiring(local_gen) => {
                     // Acquire the local state again.
-                    let state = ready!(Pin::new(&mut this.lock).poll(cx));
+                    let state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
+                    this.lock = None;
 
                     if local_gen == state.generation_id && state.count < this.barrier.n {
                         // We need to wait for the event again.
