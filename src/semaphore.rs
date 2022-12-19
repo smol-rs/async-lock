@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use event_listener::{Event, EventListener};
+use futures_lite::ready;
 
 /// A counter for limiting the number of concurrent operations.
 #[derive(Debug)]
@@ -174,7 +175,6 @@ impl Unpin for Acquire<'_> {}
 impl<'a> Future for Acquire<'a> {
     type Output = SemaphoreGuard<'a>;
 
-    #[allow(clippy::redundant_pattern_matching)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
@@ -183,15 +183,13 @@ impl<'a> Future for Acquire<'a> {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    match this.listener.take() {
-                        None => {
-                            this.listener = Some(this.semaphore.event.listen());
+                    match &mut this.listener {
+                        listener @ None => {
+                            *listener = Some(this.semaphore.event.listen());
                         }
-                        Some(mut listener) => {
-                            if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
-                                this.listener = Some(listener);
-                                return Poll::Pending;
-                            }
+                        Some(ref mut listener) => {
+                            ready!(Pin::new(listener).poll(cx));
+                            this.listener = None;
                         }
                     }
                 }
@@ -220,7 +218,6 @@ impl Unpin for AcquireArc {}
 impl Future for AcquireArc {
     type Output = SemaphoreGuardArc;
 
-    #[allow(clippy::redundant_pattern_matching)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.get_mut();
 
@@ -229,15 +226,13 @@ impl Future for AcquireArc {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    match this.listener.take() {
-                        None => {
-                            this.listener = Some(this.semaphore.event.listen());
+                    match &mut this.listener.take() {
+                        listener @ None => {
+                            *listener = Some(this.semaphore.event.listen());
                         }
-                        Some(mut listener) => {
-                            if let Poll::Pending = Pin::new(&mut listener).poll(cx) {
-                                this.listener = Some(listener);
-                                return Poll::Pending;
-                            }
+                        Some(ref mut listener) => {
+                            ready!(Pin::new(listener).poll(cx));
+                            this.listener = None;
                         }
                     }
                 }

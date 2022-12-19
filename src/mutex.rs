@@ -421,10 +421,10 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
         if !this.starved {
             loop {
                 // Start listening for events.
-                match this.listener.take() {
-                    None => {
+                match &mut this.listener {
+                    listener @ None => {
                         // Start listening for events.
-                        this.listener = Some(mutex.lock_ops.listen());
+                        *listener = Some(mutex.lock_ops.listen());
 
                         // Try locking if nobody is being starved.
                         match mutex
@@ -442,13 +442,10 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                             _ => break,
                         }
                     }
-                    Some(mut listener) => {
+                    Some(ref mut listener) => {
                         // Wait for a notification.
-                        if Pin::new(&mut listener).poll(cx).is_pending() {
-                            // The mutex is not available.
-                            this.listener = Some(listener);
-                            return Poll::Pending;
-                        }
+                        ready!(Pin::new(listener).poll(cx));
+                        this.listener = None;
 
                         // Try locking if nobody is being starved.
                         match mutex
@@ -470,14 +467,14 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                                 break;
                             }
                         }
-                    }
-                }
 
-                // If waiting for too long, fall back to a fairer locking strategy that will prevent
-                // newer lock operations from starving us forever.
-                #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
-                if start.elapsed() > Duration::from_micros(500) {
-                    break;
+                        // If waiting for too long, fall back to a fairer locking strategy that will prevent
+                        // newer lock operations from starving us forever.
+                        #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+                        if start.elapsed() > Duration::from_micros(500) {
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -493,10 +490,10 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
 
         // Fairer locking loop.
         loop {
-            match this.listener.take() {
-                None => {
+            match &mut this.listener {
+                listener @ None => {
                     // Start listening for events.
-                    this.listener = Some(mutex.lock_ops.listen());
+                    *listener = Some(mutex.lock_ops.listen());
 
                     // Try locking if nobody else is being starved.
                     match mutex
@@ -517,13 +514,10 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                         }
                     }
                 }
-                Some(mut listener) => {
+                Some(ref mut listener) => {
                     // Wait for a notification.
-                    if Pin::new(&mut listener).poll(cx).is_pending() {
-                        // The mutex is not available.
-                        this.listener = Some(listener);
-                        return Poll::Pending;
-                    }
+                    ready!(Pin::new(listener).poll(cx));
+                    this.listener = None;
 
                     // Try acquiring the lock without waiting for others.
                     if mutex.state.fetch_or(1, Ordering::Acquire) % 2 == 0 {
