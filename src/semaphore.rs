@@ -223,7 +223,10 @@ impl Future for AcquireArc {
 
         loop {
             match this.semaphore.try_acquire_arc() {
-                Some(guard) => return Poll::Ready(guard),
+                Some(guard) => {
+                    this.listener = None;
+                    return Poll::Ready(guard);
+                }
                 None => {
                     // Wait on the listener.
                     match &mut this.listener.take() {

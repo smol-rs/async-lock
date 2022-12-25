@@ -347,7 +347,7 @@ impl<T: ?Sized> Future for LockArc<T> {
                     return Poll::Ready(MutexGuardArc(value));
                 }
 
-                LockArcInnards::Empty => unreachable!("cannot poll an empty hole"),
+                LockArcInnards::Empty => panic!("future polled after completion"),
             }
         }
     }

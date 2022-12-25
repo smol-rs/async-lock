@@ -6,7 +6,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::{Lock, Mutex};
+use crate::futures::Lock;
+use crate::Mutex;
 
 /// A counter to synchronize multiple tasks at the same time.
 #[derive(Debug)]

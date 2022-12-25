@@ -16,7 +16,16 @@ mod rwlock;
 mod semaphore;
 
 pub use barrier::{Barrier, BarrierWaitResult};
-pub use mutex::{Lock, LockArc, Mutex, MutexGuard, MutexGuardArc};
+pub use mutex::{Mutex, MutexGuard, MutexGuardArc};
 pub use once_cell::OnceCell;
 pub use rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
-pub use semaphore::{Acquire, AcquireArc, Semaphore, SemaphoreGuard, SemaphoreGuardArc};
+pub use semaphore::{Semaphore, SemaphoreGuard, SemaphoreGuardArc};
+
+pub mod futures {
+    //! Named futures for use with `async_lock` primitives.
+
+    pub use crate::barrier::BarrierWait;
+    pub use crate::mutex::{Lock, LockArc};
+    pub use crate::rwlock::{Read, UpgradableRead, Upgrade, Write};
+    pub use crate::semaphore::{Acquire, AcquireArc};
+}

@@ -11,7 +11,8 @@ use std::task::{Context, Poll};
 use event_listener::{Event, EventListener};
 use futures_lite::ready;
 
-use crate::{Lock, Mutex, MutexGuard};
+use crate::futures::Lock;
+use crate::{Mutex, MutexGuard};
 
 const WRITER_BIT: usize = 1;
 const ONE_READER: usize = 2;
@@ -379,7 +380,7 @@ impl<T: Default + ?Sized> Default for RwLock<T> {
     }
 }
 
-/// Future returned by [`RwLock::read`].
+/// The future returned by [`RwLock::read`].
 pub struct Read<'a, T: ?Sized> {
     /// The lock that is being acquired.
     lock: &'a RwLock<T>,
@@ -453,7 +454,7 @@ impl<'a, T: ?Sized> Future for Read<'a, T> {
     }
 }
 
-/// Future returned by [`RwLock::upgradable_read`].
+/// The future returned by [`RwLock::upgradable_read`].
 pub struct UpgradableRead<'a, T: ?Sized> {
     /// The lock that is being acquired.
     lock: &'a RwLock<T>,
@@ -506,7 +507,7 @@ impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
     }
 }
 
-/// Future returned by [`RwLock::write`].
+/// The future returned by [`RwLock::write`].
 pub struct Write<'a, T: ?Sized> {
     /// The lock that is being acquired.
     lock: &'a RwLock<T>,
