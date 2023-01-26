@@ -426,7 +426,9 @@ impl<T> OnceCell<T> {
 
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
-        now_or_never(self.initialize_or_wait(move || async move { closure() }, &mut Blocking))?;
+        now_or_never(
+            self.initialize_or_wait(move || std::future::ready(closure()), &mut Blocking),
+        )?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -593,22 +595,13 @@ impl<T> OnceCell<T> {
                     // but we do not have the ability to initialize it.
                     //
                     // We need to wait the initialization to complete.
-                    PollFn::new(|cx| {
-                        match event_listener.take() {
-                            None => {
-                                event_listener = Some(self.active_initializers.listen());
-                            }
-                            Some(evl) => {
-                                if let Err(evl) = strategy.poll(evl, cx) {
-                                    event_listener = Some(evl);
-                                    return Poll::Pending;
-                                }
-                            }
+                    match event_listener.take() {
+                        None => {
+                            event_listener = Some(self.active_initializers.listen());
                         }
 
-                        Poll::Ready(())
-                    })
-                    .await;
+                        Some(evl) => strategy.poll(evl).await,
+                    }
                 }
                 State::Uninitialized => {
                     // Try to move the cell into the initializing state.
@@ -781,38 +774,24 @@ fn now_or_never<T>(mut f: impl Future<Output = T>) -> T {
     }
 }
 
-/// A future that runs a function on poll.
-struct PollFn<F>(F);
-
-impl<T, F: FnMut(&mut Context<'_>) -> Poll<T>> PollFn<F> {
-    fn new(f: F) -> Self {
-        Self(f)
-    }
-}
-
-impl<F> Unpin for PollFn<F> {}
-
-impl<T, F: FnMut(&mut Context<'_>) -> Poll<T>> Future for PollFn<F> {
-    type Output = T;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<T> {
-        (self.0)(cx)
-    }
-}
-
 /// The strategy for polling an `event_listener::EventListener`.
 trait Strategy {
+    /// The future that can be polled to wait on the listener.
+    type Fut: Future<Output = ()>;
+
     /// Poll the event listener.
-    fn poll(&mut self, evl: EventListener, ctx: &mut Context<'_>) -> Result<(), EventListener>;
+    fn poll(&mut self, evl: EventListener) -> Self::Fut;
 }
 
 /// The strategy for blocking the current thread on an `EventListener`.
 struct Blocking;
 
 impl Strategy for Blocking {
-    fn poll(&mut self, evl: EventListener, _: &mut Context<'_>) -> Result<(), EventListener> {
+    type Fut = std::future::Ready<()>;
+
+    fn poll(&mut self, evl: EventListener) -> Self::Fut {
         evl.wait();
-        Ok(())
+        std::future::ready(())
     }
 }
 
@@ -820,10 +799,9 @@ impl Strategy for Blocking {
 struct NonBlocking;
 
 impl Strategy for NonBlocking {
-    fn poll(&mut self, mut evl: EventListener, ctx: &mut Context<'_>) -> Result<(), EventListener> {
-        match Pin::new(&mut evl).poll(ctx) {
-            Poll::Pending => Err(evl),
-            Poll::Ready(()) => Ok(()),
-        }
+    type Fut = EventListener;
+
+    fn poll(&mut self, evl: EventListener) -> Self::Fut {
+        evl
     }
 }
