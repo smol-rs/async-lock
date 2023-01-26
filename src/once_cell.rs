@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use event_listener::{Event, EventListener};
-use futures_lite::future;
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -427,7 +426,9 @@ impl<T> OnceCell<T> {
 
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
-        now_or_never(self.initialize_or_wait(move || future::ready(closure()), &mut Blocking))?;
+        now_or_never(
+            self.initialize_or_wait(move || std::future::ready(closure()), &mut Blocking),
+        )?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -594,22 +595,13 @@ impl<T> OnceCell<T> {
                     // but we do not have the ability to initialize it.
                     //
                     // We need to wait the initialization to complete.
-                    future::poll_fn(|cx| {
-                        match event_listener.take() {
-                            None => {
-                                event_listener = Some(self.active_initializers.listen());
-                            }
-                            Some(evl) => {
-                                if let Err(evl) = strategy.poll(evl, cx) {
-                                    event_listener = Some(evl);
-                                    return Poll::Pending;
-                                }
-                            }
+                    match event_listener.take() {
+                        None => {
+                            event_listener = Some(self.active_initializers.listen());
                         }
 
-                        Poll::Ready(())
-                    })
-                    .await;
+                        Some(evl) => strategy.poll(evl).await,
+                    }
                 }
                 State::Uninitialized => {
                     // Try to move the cell into the initializing state.
@@ -758,7 +750,7 @@ impl<T> Drop for OnceCell<T> {
 }
 
 /// Either return the result of a future now, or panic.
-fn now_or_never<T>(f: impl Future<Output = T>) -> T {
+fn now_or_never<T>(mut f: impl Future<Output = T>) -> T {
     const NOOP_WAKER: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
     unsafe fn wake(_: *const ()) {}
@@ -768,13 +760,15 @@ fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     }
     unsafe fn drop(_: *const ()) {}
 
-    futures_lite::pin!(f);
+    // SAFETY: We don't move the future after we pin it here.
+    let future = unsafe { Pin::new_unchecked(&mut f) };
+
     let waker = unsafe { Waker::from_raw(RawWaker::new(ptr::null(), &NOOP_WAKER)) };
 
     // Poll the future exactly once.
     let mut cx = Context::from_waker(&waker);
 
-    match f.poll(&mut cx) {
+    match future.poll(&mut cx) {
         Poll::Ready(value) => value,
         Poll::Pending => unreachable!("future not ready"),
     }
@@ -782,17 +776,22 @@ fn now_or_never<T>(f: impl Future<Output = T>) -> T {
 
 /// The strategy for polling an `event_listener::EventListener`.
 trait Strategy {
+    /// The future that can be polled to wait on the listener.
+    type Fut: Future<Output = ()>;
+
     /// Poll the event listener.
-    fn poll(&mut self, evl: EventListener, ctx: &mut Context<'_>) -> Result<(), EventListener>;
+    fn poll(&mut self, evl: EventListener) -> Self::Fut;
 }
 
 /// The strategy for blocking the current thread on an `EventListener`.
 struct Blocking;
 
 impl Strategy for Blocking {
-    fn poll(&mut self, evl: EventListener, _: &mut Context<'_>) -> Result<(), EventListener> {
+    type Fut = std::future::Ready<()>;
+
+    fn poll(&mut self, evl: EventListener) -> Self::Fut {
         evl.wait();
-        Ok(())
+        std::future::ready(())
     }
 }
 
@@ -800,10 +799,9 @@ impl Strategy for Blocking {
 struct NonBlocking;
 
 impl Strategy for NonBlocking {
-    fn poll(&mut self, mut evl: EventListener, ctx: &mut Context<'_>) -> Result<(), EventListener> {
-        match Pin::new(&mut evl).poll(ctx) {
-            Poll::Pending => Err(evl),
-            Poll::Ready(()) => Ok(()),
-        }
+    type Fut = EventListener;
+
+    fn poll(&mut self, evl: EventListener) -> Self::Fut {
+        evl
     }
 }

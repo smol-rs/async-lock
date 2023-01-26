@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 
 use event_listener::{Event, EventListener};
-use futures_lite::ready;
 
 use crate::futures::Lock;
 use crate::{Mutex, MutexGuard};

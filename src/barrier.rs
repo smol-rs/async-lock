@@ -1,5 +1,4 @@
 use event_listener::{Event, EventListener};
-use futures_lite::ready;
 
 use std::fmt;
 use std::future::Future;

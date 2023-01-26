@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use event_listener::{Event, EventListener};
-use futures_lite::ready;
 
 /// A counter for limiting the number of concurrent operations.
 #[derive(Debug)]
