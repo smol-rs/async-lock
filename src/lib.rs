@@ -10,6 +10,8 @@
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
 /// Simple macro to extract the value of `Poll` or return `Pending`.
+///
+/// TODO: Drop in favor of `core::task::ready`, once MSRV is bumped to 1.64.
 macro_rules! ready {
     ($e:expr) => {{
         use ::core::task::Poll;
