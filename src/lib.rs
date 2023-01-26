@@ -9,6 +9,18 @@
 
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
+/// Simple macro to extract the value of `Poll` or return `Pending`.
+macro_rules! ready {
+    ($e:expr) => {{
+        use ::core::task::Poll;
+
+        match $e {
+            Poll::Ready(v) => v,
+            Poll::Pending => return Poll::Pending,
+        }
+    }};
+}
+
 mod barrier;
 mod mutex;
 mod once_cell;

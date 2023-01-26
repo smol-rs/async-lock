@@ -18,7 +18,6 @@ use std::time::{Duration, Instant};
 use std::usize;
 
 use event_listener::{Event, EventListener};
-use futures_lite::ready;
 
 /// An async mutex.
 ///
