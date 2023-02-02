@@ -536,6 +536,7 @@ impl<T: ?Sized, B: Borrow<Mutex<T>>> Drop for AcquireSlow<B, T> {
 }
 
 /// A guard that releases the mutex when dropped.
+#[clippy::has_significant_drop]
 pub struct MutexGuard<'a, T: ?Sized>(&'a Mutex<T>);
 
 unsafe impl<T: Send + ?Sized> Send for MutexGuard<'_, T> {}
