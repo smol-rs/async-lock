@@ -596,6 +596,7 @@ impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
 }
 
 /// An owned guard that releases the mutex when dropped.
+#[clippy::has_significant_drop]
 pub struct MutexGuardArc<T: ?Sized>(Arc<Mutex<T>>);
 
 unsafe impl<T: Send + ?Sized> Send for MutexGuardArc<T> {}

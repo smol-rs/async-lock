@@ -604,6 +604,7 @@ impl<'a, T: ?Sized> Future for Write<'a, T> {
 }
 
 /// A guard that releases the read lock when dropped.
+#[clippy::has_significant_drop]
 pub struct RwLockReadGuard<'a, T: ?Sized>(&'a RwLock<T>);
 
 unsafe impl<T: Sync + ?Sized> Send for RwLockReadGuard<'_, T> {}
@@ -640,6 +641,7 @@ impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
 }
 
 /// A guard that releases the upgradable read lock when dropped.
+#[clippy::has_significant_drop]
 pub struct RwLockUpgradableReadGuard<'a, T: ?Sized> {
     reader: RwLockReadGuard<'a, T>,
     reserved: MutexGuard<'a, ()>,
@@ -851,6 +853,7 @@ impl<T: ?Sized> Drop for RwLockWriteGuardInner<'_, T> {
 }
 
 /// A guard that releases the write lock when dropped.
+#[clippy::has_significant_drop]
 pub struct RwLockWriteGuard<'a, T: ?Sized> {
     writer: RwLockWriteGuardInner<'a, T>,
     reserved: MutexGuard<'a, ()>,

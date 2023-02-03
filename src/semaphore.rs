@@ -244,6 +244,7 @@ impl Future for AcquireArc {
 }
 
 /// A guard that releases the acquired permit.
+#[clippy::has_significant_drop]
 #[derive(Debug)]
 pub struct SemaphoreGuard<'a>(&'a Semaphore);
 
@@ -255,6 +256,7 @@ impl Drop for SemaphoreGuard<'_> {
 }
 
 /// An owned guard that releases the acquired permit.
+#[clippy::has_significant_drop]
 #[derive(Debug)]
 pub struct SemaphoreGuardArc(Arc<Semaphore>);
 
