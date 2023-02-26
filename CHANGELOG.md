@@ -1,3 +1,9 @@
+# Version 2.7.0
+
+- Replace some `async` blocks with manual futures (#34)
+- Remove our dependency on `futures-lite` (#36)
+- Mark guard types with `#[clippy::has_significant_drop]` (#37)
+
 # Version 2.6.0
 
 - Add `OnceCell`. (#27)
