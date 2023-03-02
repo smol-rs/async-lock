@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use std::usize;
 
+use crate::{Blocking, NonBlocking, Strategy};
 use event_listener::{Event, EventListener};
 
 /// An async mutex.
@@ -115,6 +116,33 @@ impl<T: ?Sized> Mutex<T> {
         }
     }
 
+    /// Acquires the mutex using the blocking strategy.
+    ///
+    /// Returns a guard that releases the mutex when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`lock`] method, this method will
+    /// block the current thread until the lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Mutex;
+    ///
+    /// let mutex = Mutex::new(10);
+    /// let guard = mutex.lock_blocking();
+    /// assert_eq!(*guard, 10);
+    /// ```
+    #[inline]
+    pub fn lock_blocking(&self) -> MutexGuard<'_, T> {
+        self.lock().wait()
+    }
+
     /// Attempts to acquire the mutex.
     ///
     /// If the mutex could not be acquired at this time, then [`None`] is returned. Otherwise, a
@@ -185,6 +213,34 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn lock_arc(self: &Arc<Self>) -> LockArc<T> {
         LockArc(LockArcInnards::Unpolled(self.clone()))
+    }
+
+    /// Acquires the mutex and clones a reference to it using the blocking strategy.
+    ///
+    /// Returns an owned guard that releases the mutex when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`lock_arc`] method, this method will
+    /// block the current thread until the lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Mutex;
+    /// use std::sync::Arc;
+    ///
+    /// let mutex = Arc::new(Mutex::new(10));
+    /// let guard = mutex.lock_arc_blocking();
+    /// assert_eq!(*guard, 10);
+    /// ```
+    #[inline]
+    pub fn lock_arc_blocking(self: &Arc<Self>) -> MutexGuardArc<T> {
+        self.lock_arc().wait()
     }
 
     /// Attempts to acquire the mutex and clone a reference to it.
@@ -263,32 +319,49 @@ impl<T: ?Sized> fmt::Debug for Lock<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for Lock<'a, T> {
-    type Output = MutexGuard<'a, T>;
+impl<'a, T: ?Sized> Lock<'a, T> {
+    fn wait(mut self) -> MutexGuard<'a, T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    /// This function is used by `Barrier::poll_with_strategy`.
+    pub(crate) fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<MutexGuard<'a, T>> {
         loop {
-            match this.acquire_slow.as_mut() {
+            match self.acquire_slow.as_mut() {
                 None => {
                     // Try the fast path before trying to register slowly.
-                    match this.mutex.try_lock() {
+                    match self.mutex.try_lock() {
                         Some(guard) => return Poll::Ready(guard),
                         None => {
-                            this.acquire_slow = Some(AcquireSlow::new(this.mutex));
+                            self.acquire_slow = Some(AcquireSlow::new(self.mutex));
                         }
                     }
                 }
 
                 Some(acquire_slow) => {
                     // Continue registering slowly.
-                    let value = ready!(Pin::new(acquire_slow).poll(cx));
+                    let value = ready!(acquire_slow.poll(strategy, cx));
                     return Poll::Ready(MutexGuard(value));
                 }
             }
         }
+    }
+}
+
+impl<'a, T: ?Sized> Future for Lock<'a, T> {
+    type Output = MutexGuard<'a, T>;
+
+    #[inline]
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -314,20 +387,27 @@ impl<T: ?Sized> fmt::Debug for LockArc<T> {
     }
 }
 
-impl<T: ?Sized> Future for LockArc<T> {
-    type Output = MutexGuardArc<T>;
+impl<T: ?Sized> LockArc<T> {
+    fn wait(mut self) -> MutexGuardArc<T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<MutexGuardArc<T>> {
         loop {
-            match mem::replace(&mut this.0, LockArcInnards::Empty) {
+            match mem::replace(&mut self.0, LockArcInnards::Empty) {
                 LockArcInnards::Unpolled(mutex) => {
                     // Try the fast path before trying to register slowly.
                     match mutex.try_lock_arc() {
                         Some(guard) => return Poll::Ready(guard),
                         None => {
-                            *this = LockArc(LockArcInnards::AcquireSlow(AcquireSlow::new(
+                            *self = LockArc(LockArcInnards::AcquireSlow(AcquireSlow::new(
                                 mutex.clone(),
                             )));
                         }
@@ -336,9 +416,9 @@ impl<T: ?Sized> Future for LockArc<T> {
 
                 LockArcInnards::AcquireSlow(mut acquire_slow) => {
                     // Continue registering slowly.
-                    let value = match Pin::new(&mut acquire_slow).poll(cx) {
+                    let value = match Pin::new(&mut acquire_slow).poll(strategy, cx) {
                         Poll::Pending => {
-                            *this = LockArc(LockArcInnards::AcquireSlow(acquire_slow));
+                            *self = LockArc(LockArcInnards::AcquireSlow(acquire_slow));
                             return Poll::Pending;
                         }
                         Poll::Ready(value) => value,
@@ -349,6 +429,15 @@ impl<T: ?Sized> Future for LockArc<T> {
                 LockArcInnards::Empty => panic!("future polled after completion"),
             }
         }
+    }
+}
+
+impl<T: ?Sized> Future for LockArc<T> {
+    type Output = MutexGuardArc<T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -400,30 +489,25 @@ impl<T: ?Sized, B: Borrow<Mutex<T>>> AcquireSlow<B, T> {
 
         mutex
     }
-}
-
-impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
-    type Output = B;
 
     #[cold]
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = &mut *self;
+    fn poll<S: Strategy>(&mut self, strategy: &mut S, cx: &mut S::Context) -> Poll<B> {
         #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
-        let start = *this.start.get_or_insert_with(Instant::now);
-        let mutex = this
+        let start = *self.start.get_or_insert_with(Instant::now);
+        let mutex = self
             .mutex
             .as_ref()
             .expect("future polled after completion")
             .borrow();
 
         // Only use this hot loop if we aren't currently starved.
-        if !this.starved {
+        if !self.starved {
             loop {
                 // Start listening for events.
-                match &mut this.listener {
-                    listener @ None => {
+                match self.listener.take() {
+                    None => {
                         // Start listening for events.
-                        *listener = Some(mutex.lock_ops.listen());
+                        self.listener = Some(mutex.lock_ops.listen());
 
                         // Try locking if nobody is being starved.
                         match mutex
@@ -432,7 +516,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                             .unwrap_or_else(|x| x)
                         {
                             // Lock acquired!
-                            0 => return Poll::Ready(this.take_mutex().unwrap()),
+                            0 => return Poll::Ready(self.take_mutex().unwrap()),
 
                             // Lock is held and nobody is starved.
                             1 => {}
@@ -441,10 +525,12 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                             _ => break,
                         }
                     }
-                    Some(ref mut listener) => {
+                    Some(listener) => {
                         // Wait for a notification.
-                        ready!(Pin::new(listener).poll(cx));
-                        this.listener = None;
+                        if let Err(evl) = strategy.poll(cx, listener) {
+                            self.listener = Some(evl);
+                            return Poll::Pending;
+                        }
 
                         // Try locking if nobody is being starved.
                         match mutex
@@ -453,7 +539,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                             .unwrap_or_else(|x| x)
                         {
                             // Lock acquired!
-                            0 => return Poll::Ready(this.take_mutex().unwrap()),
+                            0 => return Poll::Ready(self.take_mutex().unwrap()),
 
                             // Lock is held and nobody is starved.
                             1 => {}
@@ -484,15 +570,15 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
             }
 
             // Indicate that we are now starving and will use a fairer locking strategy.
-            this.starved = true;
+            self.starved = true;
         }
 
         // Fairer locking loop.
         loop {
-            match &mut this.listener {
-                listener @ None => {
+            match self.listener.take() {
+                None => {
                     // Start listening for events.
-                    *listener = Some(mutex.lock_ops.listen());
+                    self.listener = Some(mutex.lock_ops.listen());
 
                     // Try locking if nobody else is being starved.
                     match mutex
@@ -501,7 +587,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                         .unwrap_or_else(|x| x)
                     {
                         // Lock acquired!
-                        2 => return Poll::Ready(this.take_mutex().unwrap()),
+                        2 => return Poll::Ready(self.take_mutex().unwrap()),
 
                         // Lock is held by someone.
                         s if s % 2 == 1 => {}
@@ -513,14 +599,16 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
                         }
                     }
                 }
-                Some(ref mut listener) => {
+                Some(listener) => {
                     // Wait for a notification.
-                    ready!(Pin::new(listener).poll(cx));
-                    this.listener = None;
+                    if let Err(evl) = strategy.poll(cx, listener) {
+                        self.listener = Some(evl);
+                        return Poll::Pending;
+                    }
 
                     // Try acquiring the lock without waiting for others.
                     if mutex.state.fetch_or(1, Ordering::Acquire) % 2 == 0 {
-                        return Poll::Ready(this.take_mutex().unwrap());
+                        return Poll::Ready(self.take_mutex().unwrap());
                     }
                 }
             }

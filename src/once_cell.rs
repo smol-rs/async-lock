@@ -8,7 +8,8 @@ use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-use event_listener::{Event, EventListener};
+use crate::{Blocking, NonBlocking, Strategy};
+use event_listener::Event;
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -373,7 +374,8 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: initialize the value.
-        self.initialize_or_wait(closure, &mut NonBlocking).await?;
+        self.initialize_or_wait(closure, &mut NonBlocking::default())
+            .await?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -600,7 +602,7 @@ impl<T> OnceCell<T> {
                             event_listener = Some(self.active_initializers.listen());
                         }
 
-                        Some(evl) => strategy.poll(evl).await,
+                        Some(evl) => strategy.future(evl).await,
                     }
                 }
                 State::Uninitialized => {
@@ -771,37 +773,5 @@ fn now_or_never<T>(mut f: impl Future<Output = T>) -> T {
     match future.poll(&mut cx) {
         Poll::Ready(value) => value,
         Poll::Pending => unreachable!("future not ready"),
-    }
-}
-
-/// The strategy for polling an `event_listener::EventListener`.
-trait Strategy {
-    /// The future that can be polled to wait on the listener.
-    type Fut: Future<Output = ()>;
-
-    /// Poll the event listener.
-    fn poll(&mut self, evl: EventListener) -> Self::Fut;
-}
-
-/// The strategy for blocking the current thread on an `EventListener`.
-struct Blocking;
-
-impl Strategy for Blocking {
-    type Fut = std::future::Ready<()>;
-
-    fn poll(&mut self, evl: EventListener) -> Self::Fut {
-        evl.wait();
-        std::future::ready(())
-    }
-}
-
-/// The strategy for polling an `EventListener` in an async context.
-struct NonBlocking;
-
-impl Strategy for NonBlocking {
-    type Fut = EventListener;
-
-    fn poll(&mut self, evl: EventListener) -> Self::Fut {
-        evl
     }
 }

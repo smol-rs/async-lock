@@ -41,6 +41,15 @@ fn smoke() {
 }
 
 #[test]
+fn smoke_blocking() {
+    let lock = RwLock::new(());
+    drop(lock.read_blocking());
+    drop(lock.write_blocking());
+    drop((lock.read_blocking(), lock.read_blocking()));
+    drop(lock.write_blocking());
+}
+
+#[test]
 fn try_write() {
     future::block_on(async {
         let lock = RwLock::new(0isize);
@@ -196,6 +205,33 @@ fn upgrade() {
 }
 
 #[test]
+fn upgrade_blocking() {
+    let lock: RwLock<i32> = RwLock::new(0);
+
+    let read_guard = lock.read_blocking();
+    let read_guard2 = lock.read_blocking();
+    // Should be able to obtain an upgradable lock.
+    let upgradable_guard = lock.upgradable_read_blocking();
+    // Should be able to obtain a read lock when an upgradable lock is active.
+    let read_guard3 = lock.read_blocking();
+    assert_eq!(0, *read_guard3);
+    drop(read_guard);
+    drop(read_guard2);
+    drop(read_guard3);
+
+    // Writers should not pass.
+    assert!(lock.try_write().is_none());
+
+    let mut write_guard = RwLockUpgradableReadGuard::try_upgrade(upgradable_guard)
+        .expect("should be able to upgrade an upgradable lock because there are no more readers");
+    *write_guard += 1;
+    drop(write_guard);
+
+    let read_guard = lock.read_blocking();
+    assert_eq!(1, *read_guard)
+}
+
+#[test]
 fn not_upgrade() {
     future::block_on(async {
         let mutex: RwLock<i32> = RwLock::new(0);
@@ -224,6 +260,35 @@ fn not_upgrade() {
         let read_guard = mutex.read().await;
         assert_eq!(1, *read_guard)
     });
+}
+
+#[test]
+fn not_upgrade_blocking() {
+    let mutex: RwLock<i32> = RwLock::new(0);
+
+    let read_guard = mutex.read_blocking();
+    let read_guard2 = mutex.read_blocking();
+    // Should be able to obtain an upgradable lock.
+    let upgradable_guard = mutex.upgradable_read_blocking();
+    // Should be able to obtain a shared lock when an upgradable lock is active.
+    let read_guard3 = mutex.read_blocking();
+    assert_eq!(0, *read_guard3);
+    drop(read_guard);
+    drop(read_guard2);
+    drop(read_guard3);
+
+    // Drop the upgradable lock.
+    drop(upgradable_guard);
+
+    assert_eq!(0, *(mutex.read_blocking()));
+
+    // Should be able to acquire a write lock because there are no more readers.
+    let mut write_guard = mutex.write_blocking();
+    *write_guard += 1;
+    drop(write_guard);
+
+    let read_guard = mutex.read_blocking();
+    assert_eq!(1, *read_guard)
 }
 
 #[test]

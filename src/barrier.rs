@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::futures::Lock;
-use crate::Mutex;
+use crate::{Blocking, Mutex, NonBlocking, Strategy};
 
 /// A counter to synchronize multiple tasks at the same time.
 #[derive(Debug)]
@@ -85,6 +85,47 @@ impl Barrier {
             state: WaitState::Initial,
         }
     }
+
+    /// Blocks the current thread until all tasks reach this point.
+    ///
+    /// Barriers are reusable after all tasks have synchronized, and can be used continuously.
+    ///
+    /// Returns a [`BarrierWaitResult`] indicating whether this task is the "leader", meaning the
+    /// last task to call this method.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`wait`] method, this method will
+    /// block the current thread until the wait is complete.
+    ///
+    /// This method should not be used in a synchronous context. It is intended to be
+    /// used in a way that a barrier can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Barrier;
+    /// use futures_lite::future;
+    /// use std::sync::Arc;
+    /// use std::thread;
+    ///
+    /// let barrier = Arc::new(Barrier::new(5));
+    ///
+    /// for _ in 0..5 {
+    ///     let b = barrier.clone();
+    ///     thread::spawn(move || {
+    ///         // The same messages will be printed together.
+    ///         // There will NOT be interleaving of "before" and "after".
+    ///         println!("before wait");
+    ///         b.wait_blocking();
+    ///         println!("after wait");
+    ///     });
+    /// }
+    /// ```
+    pub fn wait_blocking(&self) -> BarrierWaitResult {
+        self.wait().wait()
+    }
 }
 
 /// The future returned by [`Barrier::wait()`].
@@ -110,39 +151,50 @@ enum WaitState {
     Initial,
 
     /// We are waiting for the listener to complete.
-    Waiting { evl: EventListener, local_gen: u64 },
+    Waiting {
+        evl: Option<EventListener>,
+        local_gen: u64,
+    },
 
     /// Waiting to re-acquire the lock to check the state again.
     Reacquiring(u64),
 }
 
-impl Future for BarrierWait<'_> {
-    type Output = BarrierWaitResult;
+impl BarrierWait<'_> {
+    fn wait(mut self) -> BarrierWaitResult {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(result) => result,
+            Poll::Pending => panic!("future did not complete"),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<BarrierWaitResult> {
         loop {
-            match this.state {
+            match self.state {
                 WaitState::Initial => {
                     // See if the lock is ready yet.
-                    let mut state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
-                    this.lock = None;
+                    let mut state =
+                        ready!(self.lock.as_mut().unwrap().poll_with_strategy(strategy, cx));
+                    self.lock = None;
 
                     let local_gen = state.generation_id;
                     state.count += 1;
 
-                    if state.count < this.barrier.n {
+                    if state.count < self.barrier.n {
                         // We need to wait for the event.
-                        this.state = WaitState::Waiting {
-                            evl: this.barrier.event.listen(),
+                        self.state = WaitState::Waiting {
+                            evl: Some(self.barrier.event.listen()),
                             local_gen,
                         };
                     } else {
                         // We are the last one.
                         state.count = 0;
                         state.generation_id = state.generation_id.wrapping_add(1);
-                        this.barrier.event.notify(std::usize::MAX);
+                        self.barrier.event.notify(std::usize::MAX);
                         return Poll::Ready(BarrierWaitResult { is_leader: true });
                     }
                 }
@@ -151,22 +203,27 @@ impl Future for BarrierWait<'_> {
                     ref mut evl,
                     local_gen,
                 } => {
-                    ready!(Pin::new(evl).poll(cx));
+                    // Wait for the event to complete.
+                    if let Err(e) = strategy.poll(cx, evl.take().unwrap()) {
+                        *evl = Some(e);
+                        return Poll::Pending;
+                    }
 
                     // We are now re-acquiring the mutex.
-                    this.lock = Some(this.barrier.state.lock());
-                    this.state = WaitState::Reacquiring(local_gen);
+                    self.lock = Some(self.barrier.state.lock());
+                    self.state = WaitState::Reacquiring(local_gen);
                 }
 
                 WaitState::Reacquiring(local_gen) => {
                     // Acquire the local state again.
-                    let state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
-                    this.lock = None;
+                    let state =
+                        ready!(self.lock.as_mut().unwrap().poll_with_strategy(strategy, cx));
+                    self.lock = None;
 
-                    if local_gen == state.generation_id && state.count < this.barrier.n {
+                    if local_gen == state.generation_id && state.count < self.barrier.n {
                         // We need to wait for the event again.
-                        this.state = WaitState::Waiting {
-                            evl: this.barrier.event.listen(),
+                        self.state = WaitState::Waiting {
+                            evl: Some(self.barrier.event.listen()),
                             local_gen,
                         };
                     } else {
@@ -176,6 +233,15 @@ impl Future for BarrierWait<'_> {
                 }
             }
         }
+    }
+}
+
+impl Future for BarrierWait<'_> {
+    type Output = BarrierWaitResult;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 

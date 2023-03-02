@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+use crate::{Blocking, NonBlocking, Strategy};
 use event_listener::{Event, EventListener};
 
 /// A counter for limiting the number of concurrent operations.
@@ -89,6 +90,31 @@ impl Semaphore {
             listener: None,
         }
     }
+
+    /// Waits for a permit for a concurrent operation.
+    ///
+    /// Returns a guard that releases the permit when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`acquire`] method, this method will
+    /// block the current thread until the permit is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a semaphore can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Semaphore::new(2);
+    /// let guard = s.acquire_blocking();
+    /// ```
+    pub fn acquire_blocking(&self) -> SemaphoreGuard<'_> {
+        self.acquire().wait()
+    }
 }
 
 impl Semaphore {
@@ -152,6 +178,32 @@ impl Semaphore {
             listener: None,
         }
     }
+
+    /// Waits for an owned permit for a concurrent operation.
+    ///
+    /// Returns a guard that releases the permit when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`acquire_arc`] method, this method will
+    /// block the current thread until the permit is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a semaphore can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Semaphore;
+    /// use std::sync::Arc;
+    ///
+    /// let s = Arc::new(Semaphore::new(2));
+    /// let guard = s.acquire_arc_blocking();
+    /// ```
+    pub fn acquire_arc_blocking(self: &Arc<Self>) -> SemaphoreGuardArc {
+        self.acquire_arc().wait()
+    }
 }
 
 /// The future returned by [`Semaphore::acquire`].
@@ -171,29 +223,47 @@ impl fmt::Debug for Acquire<'_> {
 
 impl Unpin for Acquire<'_> {}
 
-impl<'a> Future for Acquire<'a> {
-    type Output = SemaphoreGuard<'a>;
+impl<'a> Acquire<'a> {
+    fn wait(mut self) -> SemaphoreGuard<'a> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<SemaphoreGuard<'a>> {
         loop {
-            match this.semaphore.try_acquire() {
+            match self.semaphore.try_acquire() {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener {
-                        listener @ None => {
-                            *listener = Some(this.semaphore.event.listen());
+                    match self.listener.take() {
+                        None => {
+                            self.listener = Some(self.semaphore.event.listen());
                         }
-                        Some(ref mut listener) => {
-                            ready!(Pin::new(listener).poll(cx));
-                            this.listener = None;
+                        Some(listener) => {
+                            if let Err(e) = strategy.poll(cx, listener) {
+                                self.listener = Some(e);
+                                return Poll::Pending;
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+impl<'a> Future for Acquire<'a> {
+    type Output = SemaphoreGuard<'a>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -214,32 +284,50 @@ impl fmt::Debug for AcquireArc {
 
 impl Unpin for AcquireArc {}
 
-impl Future for AcquireArc {
-    type Output = SemaphoreGuardArc;
+impl AcquireArc {
+    fn wait(mut self) -> SemaphoreGuardArc {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<SemaphoreGuardArc> {
         loop {
-            match this.semaphore.try_acquire_arc() {
+            match self.semaphore.try_acquire_arc() {
                 Some(guard) => {
-                    this.listener = None;
+                    self.listener = None;
                     return Poll::Ready(guard);
                 }
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener.take() {
-                        listener @ None => {
-                            *listener = Some(this.semaphore.event.listen());
+                    match self.listener.take() {
+                        None => {
+                            self.listener = Some(self.semaphore.event.listen());
                         }
-                        Some(ref mut listener) => {
-                            ready!(Pin::new(listener).poll(cx));
-                            this.listener = None;
+                        Some(listener) => {
+                            if let Err(e) = strategy.poll(cx, listener) {
+                                self.listener = Some(e);
+                                return Poll::Pending;
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+impl Future for AcquireArc {
+    type Output = SemaphoreGuardArc;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 

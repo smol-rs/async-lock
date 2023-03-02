@@ -51,6 +51,39 @@ fn stress() {
 }
 
 #[test]
+fn stress_blocking() {
+    const COUNT: usize = if cfg!(miri) { 500 } else { 10_000 };
+
+    let s = Arc::new(Semaphore::new(5));
+    let (tx, rx) = mpsc::channel::<()>();
+
+    for _ in 0..50 {
+        let s = s.clone();
+        let tx = tx.clone();
+
+        thread::spawn(move || {
+            for _ in 0..COUNT {
+                s.acquire_blocking();
+            }
+            drop(tx);
+        });
+    }
+
+    drop(tx);
+    let _ = rx.recv();
+
+    let _g1 = s.try_acquire().unwrap();
+    let g2 = s.try_acquire().unwrap();
+    let _g3 = s.try_acquire().unwrap();
+    let _g4 = s.try_acquire().unwrap();
+    let _g5 = s.try_acquire().unwrap();
+
+    assert!(s.try_acquire().is_none());
+    drop(g2);
+    assert!(s.try_acquire().is_some());
+}
+
+#[test]
 fn as_mutex() {
     let s = Arc::new(Semaphore::new(1));
     let s2 = s.clone();

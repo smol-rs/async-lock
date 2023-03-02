@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 use event_listener::{Event, EventListener};
 
 use crate::futures::Lock;
-use crate::{Mutex, MutexGuard};
+use crate::{Blocking, Mutex, MutexGuard, NonBlocking, Strategy};
 
 const WRITER_BIT: usize = 1;
 const ONE_READER: usize = 2;
@@ -182,6 +182,38 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Acquires a read lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// Note that attempts to acquire a read lock will block if there are also concurrent attempts
+    /// to acquire a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`read`] method, this method will
+    /// block the current thread until the read lock is acquired.
+    ///
+    /// This method should not be used in a synchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::RwLock;
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let reader = lock.read_blocking();
+    /// assert_eq!(*reader, 1);
+    ///
+    /// assert!(lock.try_read().is_some());
+    /// ```
+    pub fn read_blocking(&self) -> RwLockReadGuard<'_, T> {
+        self.read().wait()
+    }
+
     /// Attempts to acquire a read lock with the possiblity to upgrade to a write lock.
     ///
     /// If a read lock could not be acquired at this time, then [`None`] is returned. Otherwise, a
@@ -269,6 +301,43 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Attempts to acquire a read lock with the possiblity to upgrade to a write lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// Upgradable read lock reserves the right to be upgraded to a write lock, which means there
+    /// can be at most one upgradable read lock at a time.
+    ///
+    /// Note that attempts to acquire an upgradable read lock will block if there are concurrent
+    /// attempts to acquire another upgradable read lock or a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`upgradable_read`] method, this method will
+    /// block the current thread until the read lock is acquired.
+    ///
+    /// This method should not be used in a synchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let reader = lock.upgradable_read_blocking();
+    /// assert_eq!(*reader, 1);
+    /// assert_eq!(*lock.try_read().unwrap(), 1);
+    ///
+    /// let mut writer = RwLockUpgradableReadGuard::upgrade_blocking(reader);
+    /// *writer = 2;
+    /// ```
+    pub fn upgradable_read_blocking(&self) -> RwLockUpgradableReadGuard<'_, T> {
+        self.upgradable_read().wait()
+    }
+
     /// Attempts to acquire a write lock.
     ///
     /// If a write lock could not be acquired at this time, then [`None`] is returned. Otherwise, a
@@ -327,6 +396,33 @@ impl<T: ?Sized> RwLock<T> {
             lock: self,
             state: WriteState::Acquiring(self.mutex.lock()),
         }
+    }
+
+    /// Acquires a write lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`write`] method, this method will
+    /// block the current thread until the write lock is acquired.
+    ///
+    /// This method should not be used in a synchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::RwLock;
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let writer = lock.write_blocking();
+    /// assert!(lock.try_read().is_none());
+    /// ```
+    pub fn write_blocking(&self) -> RwLockWriteGuard<'_, T> {
+        self.write().wait()
     }
 
     /// Returns a mutable reference to the inner value.
@@ -399,47 +495,56 @@ impl<T: ?Sized> fmt::Debug for Read<'_, T> {
 
 impl<T: ?Sized> Unpin for Read<'_, T> {}
 
-impl<'a, T: ?Sized> Future for Read<'a, T> {
-    type Output = RwLockReadGuard<'a, T>;
+impl<'a, T: ?Sized> Read<'a, T> {
+    fn wait(mut self) -> RwLockReadGuard<'a, T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<RwLockReadGuard<'a, T>> {
         loop {
-            if this.state & WRITER_BIT == 0 {
+            if self.state & WRITER_BIT == 0 {
                 // Make sure the number of readers doesn't overflow.
-                if this.state > std::isize::MAX as usize {
+                if self.state > std::isize::MAX as usize {
                     process::abort();
                 }
 
                 // If nobody is holding a write lock or attempting to acquire it, increment the
                 // number of readers.
-                match this.lock.state.compare_exchange(
-                    this.state,
-                    this.state + ONE_READER,
+                match self.lock.state.compare_exchange(
+                    self.state,
+                    self.state + ONE_READER,
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 ) {
-                    Ok(_) => return Poll::Ready(RwLockReadGuard(this.lock)),
-                    Err(s) => this.state = s,
+                    Ok(_) => return Poll::Ready(RwLockReadGuard(self.lock)),
+                    Err(s) => self.state = s,
                 }
             } else {
                 // Start listening for "no writer" events.
-                let load_ordering = match &mut this.listener {
-                    listener @ None => {
-                        *listener = Some(this.lock.no_writer.listen());
+                let load_ordering = match self.listener.take() {
+                    None => {
+                        self.listener = Some(self.lock.no_writer.listen());
 
                         // Make sure there really is no writer.
                         Ordering::SeqCst
                     }
 
-                    Some(ref mut listener) => {
+                    Some(listener) => {
                         // Wait for the writer to finish.
-                        ready!(Pin::new(listener).poll(cx));
-                        this.listener = None;
+                        if let Err(evl) = strategy.poll(cx, listener) {
+                            self.listener = Some(evl);
+                            return Poll::Pending;
+                        }
 
                         // Notify the next reader waiting in list.
-                        this.lock.no_writer.notify(1);
+                        self.lock.no_writer.notify(1);
 
                         // Check the state again.
                         Ordering::Acquire
@@ -447,9 +552,18 @@ impl<'a, T: ?Sized> Future for Read<'a, T> {
                 };
 
                 // Reload the state.
-                this.state = this.lock.state.load(load_ordering);
+                self.state = self.lock.state.load(load_ordering);
             }
         }
+    }
+}
+
+impl<'a, T: ?Sized> Future for Read<'a, T> {
+    type Output = RwLockReadGuard<'a, T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -470,16 +584,23 @@ impl<T: ?Sized> fmt::Debug for UpgradableRead<'_, T> {
 
 impl<T: ?Sized> Unpin for UpgradableRead<'_, T> {}
 
-impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
-    type Output = RwLockUpgradableReadGuard<'a, T>;
+impl<'a, T: ?Sized> UpgradableRead<'a, T> {
+    fn wait(mut self) -> RwLockUpgradableReadGuard<'a, T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<RwLockUpgradableReadGuard<'a, T>> {
         // Acquire the mutex.
-        let mutex_guard = ready!(Pin::new(&mut this.acquire).poll(cx));
+        let mutex_guard = ready!(self.acquire.poll_with_strategy(strategy, cx));
 
-        let mut state = this.lock.state.load(Ordering::Acquire);
+        let mut state = self.lock.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
         if state > std::isize::MAX as usize {
@@ -488,7 +609,7 @@ impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
 
         // Increment the number of readers.
         loop {
-            match this.lock.state.compare_exchange(
+            match self.lock.state.compare_exchange(
                 state,
                 state + ONE_READER,
                 Ordering::AcqRel,
@@ -496,13 +617,22 @@ impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
             ) {
                 Ok(_) => {
                     return Poll::Ready(RwLockUpgradableReadGuard {
-                        reader: RwLockReadGuard(this.lock),
+                        reader: RwLockReadGuard(self.lock),
                         reserved: mutex_guard,
                     });
                 }
                 Err(s) => state = s,
             }
         }
+    }
+}
+
+impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
+    type Output = RwLockUpgradableReadGuard<'a, T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -537,22 +667,29 @@ impl<T: ?Sized> fmt::Debug for Write<'_, T> {
 
 impl<T: ?Sized> Unpin for Write<'_, T> {}
 
-impl<'a, T: ?Sized> Future for Write<'a, T> {
-    type Output = RwLockWriteGuard<'a, T>;
+impl<'a, T: ?Sized> Write<'a, T> {
+    fn wait(mut self) -> RwLockWriteGuard<'a, T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<RwLockWriteGuard<'a, T>> {
         loop {
-            match &mut this.state {
+            match &mut self.state {
                 WriteState::Acquiring(lock) => {
                     // First grab the mutex.
-                    let mutex_guard = ready!(Pin::new(lock).poll(cx));
+                    let mutex_guard = ready!(lock.poll_with_strategy(strategy, cx));
 
                     // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
-                    let new_state = this.lock.state.fetch_or(WRITER_BIT, Ordering::SeqCst);
+                    let new_state = self.lock.state.fetch_or(WRITER_BIT, Ordering::SeqCst);
                     let guard = RwLockWriteGuard {
-                        writer: RwLockWriteGuardInner(this.lock),
+                        writer: RwLockWriteGuardInner(self.lock),
                         reserved: mutex_guard,
                     };
 
@@ -562,9 +699,9 @@ impl<'a, T: ?Sized> Future for Write<'a, T> {
                     }
 
                     // Start waiting for the readers to finish.
-                    this.state = WriteState::WaitingReaders {
+                    self.state = WriteState::WaitingReaders {
                         guard: Some(guard),
-                        listener: Some(this.lock.no_readers.listen()),
+                        listener: Some(self.lock.no_readers.listen()),
                     };
                 }
 
@@ -579,27 +716,38 @@ impl<'a, T: ?Sized> Future for Write<'a, T> {
                     };
 
                     // Check the state again.
-                    if this.lock.state.load(load_ordering) == WRITER_BIT {
+                    if self.lock.state.load(load_ordering) == WRITER_BIT {
                         // We are the only ones holding the lock, return it.
                         return Poll::Ready(guard.take().unwrap());
                     }
 
                     // Wait for the readers to finish.
-                    match listener {
+                    match listener.take() {
                         None => {
                             // Register a listener.
-                            *listener = Some(this.lock.no_readers.listen());
+                            *listener = Some(self.lock.no_readers.listen());
                         }
 
-                        Some(ref mut evl) => {
+                        Some(evl) => {
                             // Wait for the readers to finish.
-                            ready!(Pin::new(evl).poll(cx));
-                            *listener = None;
+                            if let Err(evl) = strategy.poll(cx, evl) {
+                                *listener = Some(evl);
+                                return Poll::Pending;
+                            }
                         }
                     };
                 }
             }
         }
+    }
+}
+
+impl<'a, T: ?Sized> Future for Write<'a, T> {
+    type Output = RwLockWriteGuard<'a, T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 
@@ -758,6 +906,29 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
             listener: None,
         }
     }
+
+    /// Upgrades into a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// This function will block the current thread until it is able to acquire the write lock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let reader = lock.upgradable_read_blocking();
+    /// assert_eq!(*reader, 1);
+    ///
+    /// let mut writer = RwLockUpgradableReadGuard::upgrade_blocking(reader);
+    /// *writer = 2;
+    /// ```
+    pub fn upgrade_blocking(guard: Self) -> RwLockWriteGuard<'a, T> {
+        RwLockUpgradableReadGuard::upgrade(guard).wait()
+    }
 }
 
 impl<T: fmt::Debug + ?Sized> fmt::Debug for RwLockUpgradableReadGuard<'_, T> {
@@ -797,19 +968,27 @@ impl<T: ?Sized> fmt::Debug for Upgrade<'_, T> {
 
 impl<T: ?Sized> Unpin for Upgrade<'_, T> {}
 
-impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
-    type Output = RwLockWriteGuard<'a, T>;
+impl<'a, T: ?Sized> Upgrade<'a, T> {
+    fn wait(mut self) -> RwLockWriteGuard<'a, T> {
+        match self.poll_with_strategy(&mut Blocking, &mut ()) {
+            Poll::Ready(guard) => guard,
+            Poll::Pending => unreachable!(),
+        }
+    }
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
-        let guard = this
+    fn poll_with_strategy<S: Strategy>(
+        &mut self,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<RwLockWriteGuard<'a, T>> {
+        let guard = self
             .guard
             .as_mut()
             .expect("cannot poll future after completion");
 
         // If there are readers, we need to wait for them to finish.
         loop {
-            let load_ordering = if this.listener.is_some() {
+            let load_ordering = if self.listener.is_some() {
                 Ordering::Acquire
             } else {
                 Ordering::SeqCst
@@ -822,22 +1001,33 @@ impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
             }
 
             // If there are readers, wait for them to finish.
-            match &mut this.listener {
-                listener @ None => {
+            match self.listener.take() {
+                None => {
                     // Start listening for "no readers" events.
-                    *listener = Some(guard.writer.0.no_readers.listen());
+                    self.listener = Some(guard.writer.0.no_readers.listen());
                 }
 
-                Some(ref mut listener) => {
+                Some(listener) => {
                     // Wait for the readers to finish.
-                    ready!(Pin::new(listener).poll(cx));
-                    this.listener = None;
+                    if let Err(evl) = strategy.poll(cx, listener) {
+                        self.listener = Some(evl);
+                        return Poll::Pending;
+                    }
                 }
             }
         }
 
         // We are done.
-        Poll::Ready(this.guard.take().unwrap())
+        Poll::Ready(self.guard.take().unwrap())
+    }
+}
+
+impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
+    type Output = RwLockWriteGuard<'a, T>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        self.get_mut()
+            .poll_with_strategy(&mut NonBlocking::default(), cx)
     }
 }
 

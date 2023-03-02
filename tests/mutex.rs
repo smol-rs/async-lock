@@ -21,6 +21,13 @@ fn smoke() {
 }
 
 #[test]
+fn smoke_blocking() {
+    let m = Mutex::new(());
+    drop(m.lock_blocking());
+    drop(m.lock_blocking());
+}
+
+#[test]
 fn try_lock() {
     let m = Mutex::new(());
     *m.try_lock().unwrap() = ();
