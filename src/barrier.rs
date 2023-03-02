@@ -164,7 +164,7 @@ impl BarrierWait<'_> {
     fn wait(mut self) -> BarrierWaitResult {
         match self.poll_with_strategy(&mut Blocking, &mut ()) {
             Poll::Ready(result) => result,
-            Poll::Pending => panic!("future did not complete"),
+            Poll::Pending => unreachable!(),
         }
     }
 
