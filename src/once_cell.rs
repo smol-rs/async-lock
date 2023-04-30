@@ -3,7 +3,6 @@ use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::mem::{forget, MaybeUninit};
-use std::pin::Pin;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -750,7 +749,7 @@ impl<T> Drop for OnceCell<T> {
 }
 
 /// Either return the result of a future now, or panic.
-fn now_or_never<T>(mut f: impl Future<Output = T>) -> T {
+fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     const NOOP_WAKER: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
     unsafe fn wake(_: *const ()) {}
