@@ -760,15 +760,15 @@ fn now_or_never<T>(mut f: impl Future<Output = T>) -> T {
     }
     unsafe fn drop(_: *const ()) {}
 
-    // SAFETY: We don't move the future after we pin it here.
-    let future = unsafe { Pin::new_unchecked(&mut f) };
+    // Shadow the future so that we can get a mutable reference to it.
+    pin!(f);
 
     let waker = unsafe { Waker::from_raw(RawWaker::new(ptr::null(), &NOOP_WAKER)) };
 
     // Poll the future exactly once.
     let mut cx = Context::from_waker(&waker);
 
-    match future.poll(&mut cx) {
+    match f.poll(&mut cx) {
         Poll::Ready(value) => value,
         Poll::Pending => unreachable!("future not ready"),
     }
