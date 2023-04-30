@@ -23,6 +23,21 @@ macro_rules! ready {
     }};
 }
 
+/// Pins a variable on the stack.
+///
+/// TODO: Drop in favor of `core::pin::pin`, once MSRV is bumped to 1.68.
+macro_rules! pin {
+    ($($x:ident),* $(,)?) => {
+        $(
+            let mut $x = $x;
+            #[allow(unused_mut)]
+            let mut $x = unsafe {
+                std::pin::Pin::new_unchecked(&mut $x)
+            };
+        )*
+    }
+}
+
 mod barrier;
 mod mutex;
 mod once_cell;
