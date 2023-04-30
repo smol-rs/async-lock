@@ -759,7 +759,6 @@ fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     }
     unsafe fn drop(_: *const ()) {}
 
-    // Shadow the future so that we can get a mutable reference to it.
     pin!(f);
 
     let waker = unsafe { Waker::from_raw(RawWaker::new(ptr::null(), &NOOP_WAKER)) };

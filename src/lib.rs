@@ -23,7 +23,7 @@ macro_rules! ready {
     }};
 }
 
-/// Simple macro to shadow a variable with a pinned reference.
+/// Pins a variable on the stack.
 ///
 /// TODO: Drop in favor of `core::pin::pin`, once MSRV is bumped to 1.68.
 macro_rules! pin {
