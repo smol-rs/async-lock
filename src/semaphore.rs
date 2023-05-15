@@ -228,7 +228,7 @@ impl Future for AcquireArc {
                 }
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener.take() {
+                    match &mut this.listener {
                         listener @ None => {
                             *listener = Some(this.semaphore.event.listen());
                         }
