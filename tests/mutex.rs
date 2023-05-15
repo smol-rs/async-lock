@@ -1,9 +1,13 @@
+mod common;
+
 use std::sync::Arc;
 #[cfg(not(target_family = "wasm"))]
 use std::thread;
 
 use async_lock::Mutex;
 use futures_lite::future;
+
+use common::check_yields_when_contended;
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -79,4 +83,13 @@ fn lifetime() {
         let mutex = Arc::new(Mutex::new(0i32));
         mutex.lock_arc()
     };
+}
+
+#[test]
+fn yields_when_contended() {
+    let m = Mutex::new(());
+    check_yields_when_contended(m.try_lock().unwrap(), m.lock());
+
+    let m = Arc::new(m);
+    check_yields_when_contended(m.try_lock_arc().unwrap(), m.lock_arc());
 }

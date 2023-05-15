@@ -1,5 +1,9 @@
+mod common;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+use common::check_yields_when_contended;
 
 #[cfg(not(target_family = "wasm"))]
 use futures_lite::prelude::*;
@@ -252,4 +256,24 @@ fn upgradable_with_concurrent_writer() {
         let read_guard = lock.read().await;
         assert_eq!(2, *read_guard);
     });
+}
+
+#[test]
+fn yields_when_contended() {
+    let rw = RwLock::new(());
+
+    check_yields_when_contended(rw.try_write().unwrap(), rw.read());
+    check_yields_when_contended(rw.try_write().unwrap(), rw.upgradable_read());
+    check_yields_when_contended(rw.try_write().unwrap(), rw.write());
+
+    check_yields_when_contended(rw.try_read().unwrap(), rw.write());
+
+    check_yields_when_contended(rw.try_upgradable_read().unwrap(), rw.write());
+    check_yields_when_contended(rw.try_upgradable_read().unwrap(), rw.upgradable_read());
+
+    let upgradable = rw.try_upgradable_read().unwrap();
+    check_yields_when_contended(
+        rw.try_read().unwrap(),
+        RwLockUpgradableReadGuard::upgrade(upgradable),
+    );
 }
