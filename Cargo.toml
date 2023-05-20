@@ -15,7 +15,9 @@ categories = ["asynchronous", "concurrency"]
 exclude = ["/.*"]
 
 [dependencies]
-event-listener = "2.5.1"
+event-listener = "2"
+event-listener-strategy = { git = "https://github.com/smol-rs/event-listener.git" }
+pin-project-lite = "0.2.11"
 
 [dev-dependencies]
 async-channel = "1.5.0"
@@ -25,3 +27,7 @@ waker-fn = "1.1.0"
 
 [target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[patch.crates-io]
+async-channel = { git = "https://github.com/smol-rs/async-channel.git", branch = "notgull/evl-3.0" }
+event-listener = { git = "https://github.com/smol-rs/event-listener.git" }

@@ -86,7 +86,7 @@ impl Semaphore {
     pub fn acquire(&self) -> Acquire<'_> {
         Acquire {
             semaphore: self,
-            listener: None,
+            listener: EventListener::new(&self.event),
         }
     }
 
@@ -176,13 +176,16 @@ impl Semaphore {
     }
 }
 
-/// The future returned by [`Semaphore::acquire`].
-pub struct Acquire<'a> {
-    /// The semaphore being acquired.
-    semaphore: &'a Semaphore,
+pin_project_lite::pin_project! {
+    /// The future returned by [`Semaphore::acquire`].
+    pub struct Acquire<'a> {
+        // The semaphore being acquired.
+        semaphore: &'a Semaphore,
 
-    /// The listener waiting on the semaphore.
-    listener: Option<EventListener>,
+        // The listener waiting on the semaphore.
+        #[pin]
+        listener: EventListener,
+    }
 }
 
 impl fmt::Debug for Acquire<'_> {
@@ -191,27 +194,21 @@ impl fmt::Debug for Acquire<'_> {
     }
 }
 
-impl Unpin for Acquire<'_> {}
-
 impl<'a> Future for Acquire<'a> {
     type Output = SemaphoreGuard<'a>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
             match this.semaphore.try_acquire() {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener {
-                        None => {
-                            this.listener = Some(this.semaphore.event.listen());
-                        }
-                        Some(ref mut listener) => {
-                            ready!(Pin::new(listener).poll(cx));
-                            this.listener = None;
-                        }
+                    if !this.listener.is_listening() {
+                        this.listener.as_mut().listen();
+                    } else {
+                        ready!(this.listener.as_mut().poll(cx));
                     }
                 }
             }
@@ -225,7 +222,9 @@ pub struct AcquireArc {
     semaphore: Arc<Semaphore>,
 
     /// The listener waiting on the semaphore.
-    listener: Option<EventListener>,
+    ///
+    /// TODO: At the next breaking release, remove the `Pin<Box<>>` and make this type `!Unpin`.
+    listener: Option<Pin<Box<EventListener>>>,
 }
 
 impl fmt::Debug for AcquireArc {

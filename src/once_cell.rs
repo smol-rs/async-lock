@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use event_listener::{Event, EventListener};
+use event_listener_strategy::{Blocking, NonBlocking, Strategy};
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -84,12 +85,15 @@ pub struct OnceCell<T> {
     ///
     /// These are the users of get_or_init() and similar functions.
     active_initializers: Event,
+
     /// Listeners waiting for the cell to be initialized.
     ///
     /// These are the users of wait().
     passive_waiters: Event,
+
     /// State associated with the cell.
     state: AtomicUsize,
+
     /// The value of the cell.
     value: UnsafeCell<MaybeUninit<T>>,
 }
@@ -268,7 +272,9 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = self.passive_waiters.listen();
+        let listener = EventListener::new(&self.passive_waiters);
+        pin!(listener);
+        listener.as_mut().listen();
 
         // Try again.
         if let Some(value) = self.get() {
@@ -320,7 +326,9 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = self.passive_waiters.listen();
+        let listener = EventListener::new(&self.passive_waiters);
+        pin!(listener);
+        listener.as_mut().listen();
 
         // Try again.
         if let Some(value) = self.get() {
@@ -372,7 +380,8 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: initialize the value.
-        self.initialize_or_wait(closure, &mut NonBlocking).await?;
+        self.initialize_or_wait(closure, &mut NonBlocking::default())
+            .await?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -425,9 +434,10 @@ impl<T> OnceCell<T> {
 
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
-        now_or_never(
-            self.initialize_or_wait(move || std::future::ready(closure()), &mut Blocking),
-        )?;
+        now_or_never(self.initialize_or_wait(
+            move || std::future::ready(closure()),
+            &mut Blocking::default(),
+        ))?;
         debug_assert!(self.is_initialized());
 
         // SAFETY: We know that the value is initialized, so it is safe to
@@ -572,10 +582,11 @@ impl<T> OnceCell<T> {
     async fn initialize_or_wait<E, Fut: Future<Output = Result<T, E>>, F: FnOnce() -> Fut>(
         &self,
         closure: F,
-        strategy: &mut impl Strategy,
+        strategy: &mut impl for<'a> Strategy<'a>,
     ) -> Result<(), E> {
         // The event listener we're currently waiting on.
-        let mut event_listener = None;
+        let event_listener = EventListener::new(&self.active_initializers);
+        pin!(event_listener);
 
         let mut closure = Some(closure);
 
@@ -594,12 +605,10 @@ impl<T> OnceCell<T> {
                     // but we do not have the ability to initialize it.
                     //
                     // We need to wait the initialization to complete.
-                    match event_listener.take() {
-                        None => {
-                            event_listener = Some(self.active_initializers.listen());
-                        }
-
-                        Some(evl) => strategy.poll(evl).await,
+                    if event_listener.is_listening() {
+                        strategy.wait(event_listener.as_mut()).await;
+                    } else {
+                        event_listener.as_mut().listen();
                     }
                 }
                 State::Uninitialized => {
@@ -769,37 +778,5 @@ fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     match f.poll(&mut cx) {
         Poll::Ready(value) => value,
         Poll::Pending => unreachable!("future not ready"),
-    }
-}
-
-/// The strategy for polling an `event_listener::EventListener`.
-trait Strategy {
-    /// The future that can be polled to wait on the listener.
-    type Fut: Future<Output = ()>;
-
-    /// Poll the event listener.
-    fn poll(&mut self, evl: EventListener) -> Self::Fut;
-}
-
-/// The strategy for blocking the current thread on an `EventListener`.
-struct Blocking;
-
-impl Strategy for Blocking {
-    type Fut = std::future::Ready<()>;
-
-    fn poll(&mut self, evl: EventListener) -> Self::Fut {
-        evl.wait();
-        std::future::ready(())
-    }
-}
-
-/// The strategy for polling an `EventListener` in an async context.
-struct NonBlocking;
-
-impl Strategy for NonBlocking {
-    type Fut = EventListener;
-
-    fn poll(&mut self, evl: EventListener) -> Self::Fut {
-        evl
     }
 }
