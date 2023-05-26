@@ -1,6 +1,10 @@
 mod common;
 
-use std::sync::{mpsc, Arc};
+use std::mem::forget;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    mpsc, Arc,
+};
 use std::thread;
 
 use common::check_yields_when_contended;
@@ -104,4 +108,35 @@ fn yields_when_contended() {
 
     let s = Arc::new(s);
     check_yields_when_contended(s.try_acquire_arc().unwrap(), s.acquire_arc());
+}
+
+#[test]
+fn add_permits() {
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let s = Arc::new(Semaphore::new(0));
+    let (tx, rx) = mpsc::channel::<()>();
+
+    for _ in 0..50 {
+        let s = s.clone();
+        let tx = tx.clone();
+
+        thread::spawn(move || {
+            future::block_on(async {
+                let perm = s.acquire().await;
+                forget(perm);
+                COUNTER.fetch_add(1, Ordering::Relaxed);
+                drop(tx);
+            })
+        });
+    }
+
+    assert_eq!(COUNTER.load(Ordering::Relaxed), 0);
+
+    s.add_permits(50);
+
+    drop(tx);
+    let _ = rx.recv();
+
+    assert_eq!(COUNTER.load(Ordering::Relaxed), 50);
 }
