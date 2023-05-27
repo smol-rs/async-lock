@@ -575,10 +575,12 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
 }
 
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
+    #[inline]
     fn drop(&mut self) {
-        // Remove the last bit and notify a waiting lock operation.
-        self.0.state.fetch_sub(1, Ordering::Release);
-        self.0.lock_ops.notify(1);
+        // SAFETY: we are droppig the mutex guard, therefore unlocking the mutex.
+        unsafe {
+            self.0.unlock_unchecked();
+        }
     }
 }
 
@@ -636,10 +638,12 @@ impl<T: ?Sized> MutexGuardArc<T> {
 }
 
 impl<T: ?Sized> Drop for MutexGuardArc<T> {
+    #[inline]
     fn drop(&mut self) {
-        // Remove the last bit and notify a waiting lock operation.
-        self.0.state.fetch_sub(1, Ordering::Release);
-        self.0.lock_ops.notify(1);
+        // SAFETY: we are droppig the mutex guard, therefore unlocking the mutex.
+        unsafe {
+            self.0.unlock_unchecked();
+        }
     }
 }
 

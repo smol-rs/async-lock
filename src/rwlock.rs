@@ -8,8 +8,7 @@ use std::task::{Context, Poll};
 
 mod raw;
 
-use raw::*;
-
+use self::raw::{RawRead, RawRwLock, RawUpgradableRead, RawUpgrade, RawWrite};
 /// An async reader-writer lock.
 ///
 /// This type of lock allows multiple readers or one writer at any point in time.
@@ -39,7 +38,8 @@ use raw::*;
 /// # })
 /// ```
 pub struct RwLock<T: ?Sized> {
-    /// The locking implementation.
+    /// The underlying locking implementation.
+    /// Doesn't depend on `T`.
     raw: RawRwLock,
 
     /// The inner value.
@@ -317,8 +317,10 @@ impl<T: Default + ?Sized> Default for RwLock<T> {
 
 /// The future returned by [`RwLock::read`].
 pub struct Read<'a, T: ?Sized> {
+    /// Raw read lock acquisition future, doesn't depend on `T`.
     raw: RawRead<'a>,
 
+    /// Pointer to the value protected by the lock. Covariant in `T`.
     value: *const T,
 }
 
@@ -349,7 +351,11 @@ impl<'a, T: ?Sized> Future for Read<'a, T> {
 
 /// The future returned by [`RwLock::upgradable_read`].
 pub struct UpgradableRead<'a, T: ?Sized> {
+    /// Raw upgradable read lock acquisition future, doesn't depend on `T`.
     raw: RawUpgradableRead<'a>,
+
+    /// Pointer to the value protected by the lock. Invariant in `T`
+    /// as the upgradable lock could provide write access.
     value: *mut T,
 }
 
@@ -380,7 +386,10 @@ impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
 
 /// The future returned by [`RwLock::write`].
 pub struct Write<'a, T: ?Sized> {
+    /// Raw write lock acquisition future, doesn't depend on `T`.
     raw: RawWrite<'a>,
+
+    /// Pointer to the value protected by the lock. Invariant in `T`.
     value: *mut T,
 }
 
@@ -412,7 +421,11 @@ impl<'a, T: ?Sized> Future for Write<'a, T> {
 /// A guard that releases the read lock when dropped.
 #[clippy::has_significant_drop]
 pub struct RwLockReadGuard<'a, T: ?Sized> {
+    /// Reference to underlying locking implementation.
+    /// Doesn't depend on `T`.
     lock: &'a RawRwLock,
+
+    /// Pointer to the value protected by the lock. Covariant in `T`.
     value: *const T,
 }
 
@@ -452,8 +465,13 @@ impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
 /// A guard that releases the upgradable read lock when dropped.
 #[clippy::has_significant_drop]
 pub struct RwLockUpgradableReadGuard<'a, T: ?Sized> {
-    // The guard holds a lock on the mutex!
+    /// Reference to underlying locking implementation.
+    /// Doesn't depend on `T`.
+    /// This guard holds a lock on the witer mutex!
     lock: &'a RawRwLock,
+
+    /// Pointer to the value protected by the lock. Invariant in `T`
+    /// as the upgradable lock could provide write access.
     value: *mut T,
 }
 
@@ -598,7 +616,10 @@ impl<T: ?Sized> Deref for RwLockUpgradableReadGuard<'_, T> {
 
 /// The future returned by [`RwLockUpgradableReadGuard::upgrade`].
 pub struct Upgrade<'a, T: ?Sized> {
+    /// Raw read lock upgrade future, doesn't depend on `T`.
     raw: RawUpgrade<'a>,
+
+    /// Pointer to the value protected by the lock. Invariant in `T`.
     value: *mut T,
 }
 
@@ -627,8 +648,12 @@ impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
 /// A guard that releases the write lock when dropped.
 #[clippy::has_significant_drop]
 pub struct RwLockWriteGuard<'a, T: ?Sized> {
-    // The guard holds a lock on the mutex!
+    /// Reference to underlying locking implementation.
+    /// Doesn't depend on `T`.
+    /// This guard holds a lock on the witer mutex!
     lock: &'a RawRwLock,
+
+    /// Pointer to the value protected by the lock. Invariant in `T`.
     value: *mut T,
 }
 

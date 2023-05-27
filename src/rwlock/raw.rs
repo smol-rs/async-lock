@@ -1,3 +1,11 @@
+//! Raw, unsafe reader-writer locking implementation,
+//! doesn't depend on the data protected by the lock.
+//! [`RwLock`](super::RwLock) is implemented in terms of this.
+//!
+//! Splitting the implementation this way allows instantiating
+//! the locking code only once, and also lets us make
+//! [`RwLockReadGuard`](super::RwLockReadGuard) covariant in `T`.
+
 use std::future::Future;
 use std::mem::forget;
 use std::pin::Pin;
@@ -76,7 +84,6 @@ impl RawRwLock {
     }
 
     #[inline]
-
     pub(super) fn read(&self) -> RawRead<'_> {
         RawRead {
             lock: self,
@@ -403,6 +410,7 @@ enum WriteState<'a> {
         /// The listener for the "no readers" event.
         listener: Option<EventListener>,
     },
+
     /// The future has completed.
     Acquired,
 }
