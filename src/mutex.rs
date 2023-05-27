@@ -577,7 +577,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     #[inline]
     fn drop(&mut self) {
-        // SAFETY: we are droppig the mutex guard, therefore unlocking the mutex.
+        // SAFETY: we are dropping the mutex guard, therefore unlocking the mutex.
         unsafe {
             self.0.unlock_unchecked();
         }
@@ -640,7 +640,7 @@ impl<T: ?Sized> MutexGuardArc<T> {
 impl<T: ?Sized> Drop for MutexGuardArc<T> {
     #[inline]
     fn drop(&mut self) {
-        // SAFETY: we are droppig the mutex guard, therefore unlocking the mutex.
+        // SAFETY: we are dropping the mutex guard, therefore unlocking the mutex.
         unsafe {
             self.0.unlock_unchecked();
         }
