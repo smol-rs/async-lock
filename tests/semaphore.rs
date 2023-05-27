@@ -1,16 +1,20 @@
 mod common;
 
+use std::future::Future;
 use std::mem::forget;
+use std::pin::Pin;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     mpsc, Arc,
 };
+use std::task::Context;
+use std::task::Poll;
 use std::thread;
 
 use common::check_yields_when_contended;
 
 use async_lock::Semaphore;
-use futures_lite::future;
+use futures_lite::{future, pin};
 
 #[test]
 fn try_acquire() {
@@ -139,4 +143,30 @@ fn add_permits() {
     let _ = rx.recv();
 
     assert_eq!(COUNTER.load(Ordering::Relaxed), 50);
+}
+
+#[test]
+fn add_permits_2() {
+    future::block_on(AddPermitsTest);
+}
+
+struct AddPermitsTest;
+
+impl Future for AddPermitsTest {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let s = Semaphore::new(0);
+        let acq = s.acquire();
+        pin!(acq);
+        let acq_2 = s.acquire();
+        pin!(acq_2);
+        assert!(acq.as_mut().poll(cx).is_pending());
+        assert!(acq_2.as_mut().poll(cx).is_pending());
+        s.add_permits(1);
+        let g = acq.poll(cx);
+        assert!(g.is_ready());
+        assert!(acq_2.poll(cx).is_pending());
+
+        Poll::Ready(())
+    }
 }
