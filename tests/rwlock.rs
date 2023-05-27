@@ -14,7 +14,7 @@ use std::thread;
 
 use futures_lite::future;
 
-use async_lock::{RwLock, RwLockUpgradableReadGuard};
+use async_lock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard};
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen_test::wasm_bindgen_test as test;
@@ -276,4 +276,9 @@ fn yields_when_contended() {
         rw.try_read().unwrap(),
         RwLockUpgradableReadGuard::upgrade(upgradable),
     );
+}
+
+// We are testing that this compiles.
+fn _covariance_test<'g>(guard: RwLockReadGuard<'g, &'static ()>) {
+    let _: RwLockReadGuard<'g, &'g ()> = guard;
 }

@@ -163,6 +163,19 @@ impl<T: ?Sized> Mutex<T> {
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
+
+    /// Unlocks the mutex directly.
+    ///
+    /// # Safety
+    ///
+    /// This function is intended to be used only in the case where the mutex is locked,
+    /// and the guard is subsequently forgotten. Calling this while you don't hold a lock
+    /// on the mutex will likely lead to UB.
+    pub(crate) unsafe fn unlock_unchecked(&self) {
+        // Remove the last bit and notify a waiting lock operation.
+        self.state.fetch_sub(1, Ordering::Release);
+        self.lock_ops.notify(1);
+    }
 }
 
 impl<T: ?Sized> Mutex<T> {
@@ -562,10 +575,12 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
 }
 
 impl<T: ?Sized> Drop for MutexGuard<'_, T> {
+    #[inline]
     fn drop(&mut self) {
-        // Remove the last bit and notify a waiting lock operation.
-        self.0.state.fetch_sub(1, Ordering::Release);
-        self.0.lock_ops.notify(1);
+        // SAFETY: we are dropping the mutex guard, therefore unlocking the mutex.
+        unsafe {
+            self.0.unlock_unchecked();
+        }
     }
 }
 
@@ -623,10 +638,12 @@ impl<T: ?Sized> MutexGuardArc<T> {
 }
 
 impl<T: ?Sized> Drop for MutexGuardArc<T> {
+    #[inline]
     fn drop(&mut self) {
-        // Remove the last bit and notify a waiting lock operation.
-        self.0.state.fetch_sub(1, Ordering::Release);
-        self.0.lock_ops.notify(1);
+        // SAFETY: we are dropping the mutex guard, therefore unlocking the mutex.
+        unsafe {
+            self.0.unlock_unchecked();
+        }
     }
 }
 
