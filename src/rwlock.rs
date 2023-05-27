@@ -426,8 +426,8 @@ impl<'a, T: ?Sized> Future for Read<'a, T> {
             } else {
                 // Start listening for "no writer" events.
                 let load_ordering = match &mut this.listener {
-                    listener @ None => {
-                        *listener = Some(this.lock.no_writer.listen());
+                    None => {
+                        this.listener = Some(this.lock.no_writer.listen());
 
                         // Make sure there really is no writer.
                         Ordering::SeqCst
@@ -823,9 +823,9 @@ impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
 
             // If there are readers, wait for them to finish.
             match &mut this.listener {
-                listener @ None => {
+                None => {
                     // Start listening for "no readers" events.
-                    *listener = Some(guard.writer.0.no_readers.listen());
+                    this.listener = Some(guard.writer.0.no_readers.listen());
                 }
 
                 Some(ref mut listener) => {

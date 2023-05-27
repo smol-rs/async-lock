@@ -183,8 +183,8 @@ impl<'a> Future for Acquire<'a> {
                 None => {
                     // Wait on the listener.
                     match &mut this.listener {
-                        listener @ None => {
-                            *listener = Some(this.semaphore.event.listen());
+                        None => {
+                            this.listener = Some(this.semaphore.event.listen());
                         }
                         Some(ref mut listener) => {
                             ready!(Pin::new(listener).poll(cx));
@@ -228,9 +228,9 @@ impl Future for AcquireArc {
                 }
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener.take() {
-                        listener @ None => {
-                            *listener = Some(this.semaphore.event.listen());
+                    match &mut this.listener {
+                        None => {
+                            this.listener = Some(this.semaphore.event.listen());
                         }
                         Some(ref mut listener) => {
                             ready!(Pin::new(listener).poll(cx));

@@ -21,6 +21,7 @@ event-listener = "2.5.1"
 async-channel = "1.5.0"
 fastrand = "1.4.0"
 futures-lite = "1.12.0"
+waker-fn = "1.1.0"
 
 [target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
 wasm-bindgen-test = "0.3"

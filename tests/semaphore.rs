@@ -1,5 +1,9 @@
+mod common;
+
 use std::sync::{mpsc, Arc};
 use std::thread;
+
+use common::check_yields_when_contended;
 
 use async_lock::Semaphore;
 use futures_lite::future;
@@ -91,4 +95,13 @@ fn lifetime() {
         let mutex = Arc::new(Semaphore::new(2));
         mutex.acquire_arc()
     };
+}
+
+#[test]
+fn yields_when_contended() {
+    let s = Semaphore::new(1);
+    check_yields_when_contended(s.try_acquire().unwrap(), s.acquire());
+
+    let s = Arc::new(s);
+    check_yields_when_contended(s.try_acquire_arc().unwrap(), s.acquire_arc());
 }

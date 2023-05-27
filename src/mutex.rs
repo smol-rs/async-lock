@@ -421,9 +421,9 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
             loop {
                 // Start listening for events.
                 match &mut this.listener {
-                    listener @ None => {
+                    None => {
                         // Start listening for events.
-                        *listener = Some(mutex.lock_ops.listen());
+                        this.listener = Some(mutex.lock_ops.listen());
 
                         // Try locking if nobody is being starved.
                         match mutex
@@ -490,9 +490,9 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> Future for AcquireSlow<B, T> {
         // Fairer locking loop.
         loop {
             match &mut this.listener {
-                listener @ None => {
+                None => {
                     // Start listening for events.
-                    *listener = Some(mutex.lock_ops.listen());
+                    this.listener = Some(mutex.lock_ops.listen());
 
                     // Try locking if nobody else is being starved.
                     match mutex
