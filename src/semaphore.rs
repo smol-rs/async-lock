@@ -89,9 +89,7 @@ impl Semaphore {
             listener: None,
         }
     }
-}
 
-impl Semaphore {
     /// Attempts to get an owned permit for a concurrent operation.
     ///
     /// If the permit could not be acquired at this time, then [`None`] is returned. Otherwise, an
@@ -151,6 +149,30 @@ impl Semaphore {
             semaphore: self.clone(),
             listener: None,
         }
+    }
+
+    /// Adds `n` additional permits to the semaphore.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Semaphore;
+    ///
+    /// # futures_lite::future::block_on(async {
+    /// let s = Semaphore::new(1);
+    ///
+    /// let _guard = s.acquire().await;
+    /// assert!(s.try_acquire().is_none());
+    ///
+    /// s.add_permits(2);
+    ///
+    /// let _guard = s.acquire().await;
+    /// let _guard = s.acquire().await;
+    /// # });
+    /// ```
+    pub fn add_permits(&self, n: usize) {
+        self.count.fetch_add(n, Ordering::AcqRel);
+        self.event.notify(n);
     }
 }
 
