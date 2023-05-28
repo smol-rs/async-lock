@@ -550,3 +550,11 @@ impl<'a> Drop for RawUpgrade<'a> {
         }
     }
 }
+
+impl<'a> RawUpgrade<'a> {
+    /// Whether the future returned `Poll::Ready(..)` at some point.
+    #[inline]
+    pub(super) fn is_ready(&self) -> bool {
+        self.lock.is_none()
+    }
+}
