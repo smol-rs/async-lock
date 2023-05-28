@@ -539,12 +539,14 @@ impl<'a> Future for RawUpgrade<'a> {
 }
 
 impl<'a> Drop for RawUpgrade<'a> {
+    #[inline]
     fn drop(&mut self) {
         if let Some(lock) = self.lock {
-            // Unset `WRITER_BIT`.
-            lock.state.fetch_and(!WRITER_BIT, Ordering::SeqCst);
-            // Trigger the "no writer" event.
-            lock.no_writer.notify(1);
+            // SAFETY: we are dropping the future that would give us a write lock,
+            // so we don't need said lock anymore.
+            unsafe {
+                lock.write_unlock();
+            }
         }
     }
 }

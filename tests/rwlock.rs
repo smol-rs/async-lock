@@ -278,6 +278,35 @@ fn yields_when_contended() {
     );
 }
 
+#[test]
+fn cancellation() {
+    future::block_on(async {
+        let rw = RwLock::new(());
+
+        drop(rw.read());
+
+        drop(rw.upgradable_read());
+
+        drop(rw.write());
+
+        let read = rw.read().await;
+        drop(read);
+
+        let upgradable_read = rw.upgradable_read().await;
+        drop(upgradable_read);
+
+        let write = rw.write().await;
+        drop(write);
+
+        let upgradable_read = rw.upgradable_read().await;
+        drop(RwLockUpgradableReadGuard::upgrade(upgradable_read));
+
+        let upgradable_read = rw.upgradable_read().await;
+        let write = RwLockUpgradableReadGuard::upgrade(upgradable_read).await;
+        drop(write);
+    });
+}
+
 // We are testing that this compiles.
 fn _covariance_test<'g>(guard: RwLockReadGuard<'g, &'static ()>) {
     let _: RwLockReadGuard<'g, &'g ()> = guard;
