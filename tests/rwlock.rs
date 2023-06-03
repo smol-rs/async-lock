@@ -15,8 +15,8 @@ use std::thread;
 use futures_lite::future;
 
 use async_lock::{
-    ArcRwLockReadGuard, ArcRwLockUpgradableReadGuard, RwLock, RwLockReadGuard,
-    RwLockUpgradableReadGuard,
+    RwLock, RwLockReadGuard, RwLockReadGuardArc, RwLockUpgradableReadGuard,
+    RwLockUpgradableReadGuardArc,
 };
 
 #[cfg(target_family = "wasm")]
@@ -301,7 +301,7 @@ fn upgrade_arc() {
         // Writers should not pass.
         assert!(lock.try_write().is_none());
 
-        let mut write_guard = ArcRwLockUpgradableReadGuard::try_upgrade(upgradable_guard).expect(
+        let mut write_guard = RwLockUpgradableReadGuardArc::try_upgrade(upgradable_guard).expect(
             "should be able to upgrade an upgradable lock because there are no more readers",
         );
         *write_guard += 1;
@@ -416,7 +416,7 @@ fn upgradable_with_concurrent_writer_arc() {
                 *write_guard = 1;
             },
             async move {
-                let mut write_guard = ArcRwLockUpgradableReadGuard::upgrade(upgradable_guard).await;
+                let mut write_guard = RwLockUpgradableReadGuardArc::upgrade(upgradable_guard).await;
                 assert_eq!(*write_guard, 0);
                 *write_guard = 2;
             },
@@ -469,7 +469,7 @@ fn yields_when_contended_arc() {
     let upgradable = rw.try_upgradable_read_arc().unwrap();
     check_yields_when_contended(
         rw.try_read_arc().unwrap(),
-        ArcRwLockUpgradableReadGuard::upgrade(upgradable),
+        RwLockUpgradableReadGuardArc::upgrade(upgradable),
     );
 }
 
@@ -534,12 +534,12 @@ fn arc_rwlock_refcounts() {
 
         let upgradable_read = rw.upgradable_read_arc().await;
         assert_eq!(Arc::strong_count(&rw), 2);
-        drop(ArcRwLockUpgradableReadGuard::upgrade(upgradable_read));
+        drop(RwLockUpgradableReadGuardArc::upgrade(upgradable_read));
         assert_eq!(Arc::strong_count(&rw), 1);
 
         let upgradable_read = rw.upgradable_read_arc().await;
         assert_eq!(Arc::strong_count(&rw), 2);
-        let write = ArcRwLockUpgradableReadGuard::upgrade(upgradable_read).await;
+        let write = RwLockUpgradableReadGuardArc::upgrade(upgradable_read).await;
         assert_eq!(Arc::strong_count(&rw), 2);
         drop(write);
         assert_eq!(Arc::strong_count(&rw), 1);
@@ -553,8 +553,8 @@ fn _covariance_test<'g>(guard: RwLockReadGuard<'g, &'static ()>) {
 
 // We are testing that this compiles.
 fn _covariance_test_arc(
-    guard: ArcRwLockReadGuard<&'static ()>,
-    mut _guard_2: ArcRwLockReadGuard<&()>,
+    guard: RwLockReadGuardArc<&'static ()>,
+    mut _guard_2: RwLockReadGuardArc<&()>,
 ) {
     _guard_2 = guard;
 }

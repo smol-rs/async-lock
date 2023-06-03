@@ -7,8 +7,8 @@ use std::task::{Context, Poll};
 
 use super::raw::{RawRead, RawUpgradableRead, RawUpgrade, RawWrite};
 use super::{
-    ArcRwLockReadGuard, ArcRwLockUpgradableReadGuard, ArcRwLockWriteGuard, RwLock, RwLockReadGuard,
-    RwLockUpgradableReadGuard, RwLockWriteGuard,
+    RwLock, RwLockReadGuard, RwLockReadGuardArc, RwLockUpgradableReadGuard,
+    RwLockUpgradableReadGuardArc, RwLockWriteGuard, RwLockWriteGuardArc,
 };
 
 /// The future returned by [`RwLock::read`].
@@ -68,14 +68,14 @@ impl<T> fmt::Debug for ReadArc<'_, T> {
 impl<T> Unpin for ReadArc<'_, T> {}
 
 impl<'a, T> Future for ReadArc<'a, T> {
-    type Output = ArcRwLockReadGuard<T>;
+    type Output = RwLockReadGuardArc<T>;
 
     #[inline]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         ready!(Pin::new(&mut self.raw).poll(cx));
 
         // SAFETY: we just acquired a read lock
-        Poll::Ready(unsafe { ArcRwLockReadGuard::from_arc(self.lock.clone()) })
+        Poll::Ready(unsafe { RwLockReadGuardArc::from_arc(self.lock.clone()) })
     }
 }
 
@@ -136,12 +136,12 @@ impl<T: ?Sized> fmt::Debug for UpgradableReadArc<'_, T> {
 impl<T: ?Sized> Unpin for UpgradableReadArc<'_, T> {}
 
 impl<'a, T: ?Sized> Future for UpgradableReadArc<'a, T> {
-    type Output = ArcRwLockUpgradableReadGuard<T>;
+    type Output = RwLockUpgradableReadGuardArc<T>;
 
     #[inline]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         ready!(Pin::new(&mut self.raw).poll(cx));
-        Poll::Ready(ArcRwLockUpgradableReadGuard {
+        Poll::Ready(RwLockUpgradableReadGuardArc {
             lock: self.lock.clone(),
         })
     }
@@ -203,13 +203,13 @@ impl<T: ?Sized> fmt::Debug for WriteArc<'_, T> {
 impl<T: ?Sized> Unpin for WriteArc<'_, T> {}
 
 impl<'a, T: ?Sized> Future for WriteArc<'a, T> {
-    type Output = ArcRwLockWriteGuard<T>;
+    type Output = RwLockWriteGuardArc<T>;
 
     #[inline]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         ready!(Pin::new(&mut self.raw).poll(cx));
 
-        Poll::Ready(ArcRwLockWriteGuard {
+        Poll::Ready(RwLockWriteGuardArc {
             lock: self.lock.clone(),
         })
     }
@@ -247,8 +247,8 @@ impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
     }
 }
 
-/// The future returned by [`ArcRwLockUpgradableReadGuard::upgrade`].
-pub struct ArcUpgrade<T: ?Sized> {
+/// The future returned by [`RwLockUpgradableReadGuardArc::upgrade`].
+pub struct UpgradeArc<T: ?Sized> {
     /// Raw read lock upgrade future, doesn't depend on `T`.
     /// `'static` is a lie, this field is actually referencing the
     /// `Arc` data. But since this struct also stores said `Arc`, we know
@@ -259,42 +259,45 @@ pub struct ArcUpgrade<T: ?Sized> {
     /// However, in this case, there is an indirection via the heap;
     /// moving the `ArcUpgrade` won't move the heap allocation of the `Arc`,
     /// so the reference inside `RawUpgrade` isn't invalidated.
-    pub(super) raw: RawUpgrade<'static>,
+    pub(super) raw: ManuallyDrop<RawUpgrade<'static>>,
 
     /// Pointer to the value protected by the lock. Invariant in `T`.
     pub(super) lock: ManuallyDrop<Arc<RwLock<T>>>,
 }
 
-impl<T: ?Sized> fmt::Debug for ArcUpgrade<T> {
+impl<T: ?Sized> fmt::Debug for UpgradeArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ArcUpgrade").finish()
     }
 }
 
-impl<T: ?Sized> Unpin for ArcUpgrade<T> {}
+impl<T: ?Sized> Unpin for UpgradeArc<T> {}
 
-impl<T: ?Sized> Future for ArcUpgrade<T> {
-    type Output = ArcRwLockWriteGuard<T>;
+impl<T: ?Sized> Future for UpgradeArc<T> {
+    type Output = RwLockWriteGuardArc<T>;
 
     #[inline]
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        ready!(Pin::new(&mut self.raw).poll(cx));
+        ready!(Pin::new(&mut *self.raw).poll(cx));
 
-        Poll::Ready(ArcRwLockWriteGuard {
+        Poll::Ready(RwLockWriteGuardArc {
             lock: unsafe { ManuallyDrop::take(&mut self.lock) },
         })
     }
 }
 
-impl<T: ?Sized> Drop for ArcUpgrade<T> {
+impl<T: ?Sized> Drop for UpgradeArc<T> {
     #[inline]
     fn drop(&mut self) {
         if !self.raw.is_ready() {
             // SAFETY: we drop the `Arc` (decrementing the reference count)
             // only if this future was cancelled before returning an
             // upgraded lock.
-            unsafe { ManuallyDrop::drop(&mut self.lock) };
+            unsafe {
+                ManuallyDrop::drop(&mut self.raw);
+                ManuallyDrop::drop(&mut self.lock);
+            };
         }
     }
 }

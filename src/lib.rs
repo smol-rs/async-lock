@@ -48,8 +48,8 @@ pub use barrier::{Barrier, BarrierWaitResult};
 pub use mutex::{Mutex, MutexGuard, MutexGuardArc};
 pub use once_cell::OnceCell;
 pub use rwlock::{
-    ArcRwLockReadGuard, ArcRwLockUpgradableReadGuard, ArcRwLockWriteGuard, RwLock, RwLockReadGuard,
-    RwLockUpgradableReadGuard, RwLockWriteGuard,
+    RwLock, RwLockReadGuard, RwLockReadGuardArc, RwLockUpgradableReadGuard,
+    RwLockUpgradableReadGuardArc, RwLockWriteGuard, RwLockWriteGuardArc,
 };
 pub use semaphore::{Semaphore, SemaphoreGuard, SemaphoreGuardArc};
 
@@ -59,7 +59,7 @@ pub mod futures {
     pub use crate::barrier::BarrierWait;
     pub use crate::mutex::{Lock, LockArc};
     pub use crate::rwlock::futures::{
-        ArcUpgrade, Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, Write, WriteArc,
+        Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, UpgradeArc, Write, WriteArc,
     };
     pub use crate::semaphore::{Acquire, AcquireArc};
 }

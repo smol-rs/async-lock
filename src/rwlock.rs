@@ -9,7 +9,7 @@ pub(crate) mod futures;
 mod raw;
 
 use self::futures::{
-    ArcUpgrade, Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, Write, WriteArc,
+    Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, UpgradeArc, Write, WriteArc,
 };
 use self::raw::{RawRwLock, RawUpgrade};
 
@@ -109,12 +109,12 @@ impl<T> RwLock<T> {
     /// # })
     /// ```
     #[inline]
-    pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T>> {
+    pub fn try_read_arc(self: &Arc<Self>) -> Option<RwLockReadGuardArc<T>> {
         if self.raw.try_read() {
             let arc = self.clone();
 
             // SAFETY: we previously acquired a read lock.
-            Some(unsafe { ArcRwLockReadGuard::from_arc(arc) })
+            Some(unsafe { RwLockReadGuardArc::from_arc(arc) })
         } else {
             None
         }
@@ -296,7 +296,7 @@ impl<T: ?Sized> RwLock<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -304,14 +304,14 @@ impl<T: ?Sized> RwLock<T> {
     /// assert_eq!(*reader, 1);
     /// assert_eq!(*lock.try_read_arc().unwrap(), 1);
     ///
-    /// let mut writer = ArcRwLockUpgradableReadGuard::upgrade(reader).await;
+    /// let mut writer = RwLockUpgradableReadGuardArc::upgrade(reader).await;
     /// *writer = 2;
     /// # })
     /// ```
     #[inline]
-    pub fn try_upgradable_read_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradableReadGuard<T>> {
+    pub fn try_upgradable_read_arc(self: &Arc<Self>) -> Option<RwLockUpgradableReadGuardArc<T>> {
         if self.raw.try_upgradable_read() {
-            Some(ArcRwLockUpgradableReadGuard { lock: self.clone() })
+            Some(RwLockUpgradableReadGuardArc { lock: self.clone() })
         } else {
             None
         }
@@ -333,7 +333,7 @@ impl<T: ?Sized> RwLock<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -341,7 +341,7 @@ impl<T: ?Sized> RwLock<T> {
     /// assert_eq!(*reader, 1);
     /// assert_eq!(*lock.try_read_arc().unwrap(), 1);
     ///
-    /// let mut writer = ArcRwLockUpgradableReadGuard::upgrade(reader).await;
+    /// let mut writer = RwLockUpgradableReadGuardArc::upgrade(reader).await;
     /// *writer = 2;
     /// # })
     /// ```
@@ -427,9 +427,9 @@ impl<T: ?Sized> RwLock<T> {
     /// # })
     /// ```
     #[inline]
-    pub fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<T>> {
+    pub fn try_write_arc(self: &Arc<Self>) -> Option<RwLockWriteGuardArc<T>> {
         if self.raw.try_write() {
-            Some(ArcRwLockWriteGuard { lock: self.clone() })
+            Some(RwLockWriteGuardArc { lock: self.clone() })
         } else {
             None
         }
@@ -563,17 +563,17 @@ impl<T: ?Sized> Deref for RwLockReadGuard<'_, T> {
 
 /// An owned, reference-counting guard that releases the read lock when dropped.
 #[clippy::has_significant_drop]
-pub struct ArcRwLockReadGuard<T> {
+pub struct RwLockReadGuardArc<T> {
     /// **WARNING**: This doesn't actually point to a `T`!
     /// It points to a `RwLock<T>`, via a pointer obtained with `Arc::into_raw`.
     /// We lie for covariance.
     lock: NonNull<T>,
 }
 
-unsafe impl<T: Send + Sync> Send for ArcRwLockReadGuard<T> {}
-unsafe impl<T: Send + Sync> Sync for ArcRwLockReadGuard<T> {}
+unsafe impl<T: Send + Sync> Send for RwLockReadGuardArc<T> {}
+unsafe impl<T: Send + Sync> Sync for RwLockReadGuardArc<T> {}
 
-impl<T> ArcRwLockReadGuard<T> {
+impl<T> RwLockReadGuardArc<T> {
     /// Constructs the underlying `Arc` back from the underlying `RwLock`.
     ///
     /// # Safety
@@ -581,8 +581,8 @@ impl<T> ArcRwLockReadGuard<T> {
     /// Both the returned `Arc` and the guard will decrement their reference
     /// counts on drop! So one of the two must be forgotten.
     #[inline]
-    unsafe fn inner_arc(guard: &Self) -> Arc<RwLock<T>> {
-        Arc::from_raw(guard.lock.as_ptr().cast())
+    unsafe fn inner_arc(guard: &Self) -> ManuallyDrop<Arc<RwLock<T>>> {
+        ManuallyDrop::new(Arc::from_raw(guard.lock.as_ptr().cast()))
     }
 
     /// Constructs a guard from the underlying `Arc`.
@@ -600,34 +600,34 @@ impl<T> ArcRwLockReadGuard<T> {
     }
 }
 
-impl<T> Drop for ArcRwLockReadGuard<T> {
+impl<T> Drop for RwLockReadGuardArc<T> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: we are in `drop`, decrementing the reference count
         // on purpose.
         // We hold a read lock on the `RwLock`.
         unsafe {
-            let arc = Self::inner_arc(self);
+            let arc = ManuallyDrop::into_inner(Self::inner_arc(self));
             arc.raw.read_unlock();
         }
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for ArcRwLockReadGuard<T> {
+impl<T: fmt::Debug> fmt::Debug for RwLockReadGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: fmt::Display> fmt::Display for ArcRwLockReadGuard<T> {
+impl<T: fmt::Display> fmt::Display for RwLockReadGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T> Deref for ArcRwLockReadGuard<T> {
+impl<T> Deref for RwLockReadGuardArc<T> {
     type Target = T;
 
     #[inline]
@@ -635,7 +635,7 @@ impl<T> Deref for ArcRwLockReadGuard<T> {
         // SAFETY: we use `ManuallyDrop` to avoid double-drop.
         // We hold a read lock on the `RwLock`.
         unsafe {
-            let arc = ManuallyDrop::new(Self::inner_arc(self));
+            let arc = Self::inner_arc(self);
             &*arc.value.get()
         }
     }
@@ -798,12 +798,12 @@ impl<T: ?Sized> Deref for RwLockUpgradableReadGuard<'_, T> {
 
 /// An owned, reference-counting guard that releases the upgradable read lock when dropped.
 #[clippy::has_significant_drop]
-pub struct ArcRwLockUpgradableReadGuard<T: ?Sized> {
+pub struct RwLockUpgradableReadGuardArc<T: ?Sized> {
     /// We want invariance, so no need for pointer tricks.
     lock: Arc<RwLock<T>>,
 }
 
-impl<T: ?Sized> Drop for ArcRwLockUpgradableReadGuard<T> {
+impl<T: ?Sized> Drop for RwLockUpgradableReadGuardArc<T> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: we are dropping an upgradable read guard.
@@ -813,24 +813,24 @@ impl<T: ?Sized> Drop for ArcRwLockUpgradableReadGuard<T> {
     }
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for ArcRwLockUpgradableReadGuard<T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for ArcRwLockUpgradableReadGuard<T> {}
+unsafe impl<T: Send + Sync + ?Sized> Send for RwLockUpgradableReadGuardArc<T> {}
+unsafe impl<T: Send + Sync + ?Sized> Sync for RwLockUpgradableReadGuardArc<T> {}
 
-impl<T: fmt::Debug + ?Sized> fmt::Debug for ArcRwLockUpgradableReadGuard<T> {
+impl<T: fmt::Debug + ?Sized> fmt::Debug for RwLockUpgradableReadGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: fmt::Display + ?Sized> fmt::Display for ArcRwLockUpgradableReadGuard<T> {
+impl<T: fmt::Display + ?Sized> fmt::Display for RwLockUpgradableReadGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T: ?Sized> Deref for ArcRwLockUpgradableReadGuard<T> {
+impl<T: ?Sized> Deref for RwLockUpgradableReadGuardArc<T> {
     type Target = T;
 
     #[inline]
@@ -839,7 +839,7 @@ impl<T: ?Sized> Deref for ArcRwLockUpgradableReadGuard<T> {
     }
 }
 
-impl<T> ArcRwLockUpgradableReadGuard<T> {
+impl<T> RwLockUpgradableReadGuardArc<T> {
     /// Downgrades into a regular reader guard.
     ///
     /// # Examples
@@ -847,7 +847,7 @@ impl<T> ArcRwLockUpgradableReadGuard<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -856,24 +856,24 @@ impl<T> ArcRwLockUpgradableReadGuard<T> {
     ///
     /// assert!(lock.try_upgradable_read_arc().is_none());
     ///
-    /// let reader = ArcRwLockUpgradableReadGuard::downgrade(reader);
+    /// let reader = RwLockUpgradableReadGuardArc::downgrade(reader);
     ///
     /// assert!(lock.try_upgradable_read_arc().is_some());
     /// # })
     /// ```
     #[inline]
-    pub fn downgrade(guard: Self) -> ArcRwLockReadGuard<T> {
+    pub fn downgrade(guard: Self) -> RwLockReadGuardArc<T> {
         // SAFETY: we hold an upgradable read lock, which we are downgrading.
         unsafe {
             guard.lock.raw.downgrade_upgradable_read();
         }
 
         // SAFETY: we just downgraded to a read lock.
-        unsafe { ArcRwLockReadGuard::from_arc(Self::into_arc(guard)) }
+        unsafe { RwLockReadGuardArc::from_arc(Self::into_arc(guard)) }
     }
 }
 
-impl<T: ?Sized> ArcRwLockUpgradableReadGuard<T> {
+impl<T: ?Sized> RwLockUpgradableReadGuardArc<T> {
     /// Consumes the lock (without dropping) and returns the underlying `Arc`.
     #[inline]
     fn into_arc(guard: Self) -> Arc<RwLock<T>> {
@@ -894,7 +894,7 @@ impl<T: ?Sized> ArcRwLockUpgradableReadGuard<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -902,17 +902,17 @@ impl<T: ?Sized> ArcRwLockUpgradableReadGuard<T> {
     /// assert_eq!(*reader, 1);
     ///
     /// let reader2 = lock.read_arc().await;
-    /// let reader = ArcRwLockUpgradableReadGuard::try_upgrade(reader).unwrap_err();
+    /// let reader = RwLockUpgradableReadGuardArc::try_upgrade(reader).unwrap_err();
     ///
     /// drop(reader2);
-    /// let writer = ArcRwLockUpgradableReadGuard::try_upgrade(reader).unwrap();
+    /// let writer = RwLockUpgradableReadGuardArc::try_upgrade(reader).unwrap();
     /// # })
     /// ```
     #[inline]
-    pub fn try_upgrade(guard: Self) -> Result<ArcRwLockWriteGuard<T>, Self> {
+    pub fn try_upgrade(guard: Self) -> Result<RwLockWriteGuardArc<T>, Self> {
         // SAFETY: We hold an upgradable read guard.
         if unsafe { guard.lock.raw.try_upgrade() } {
-            Ok(ArcRwLockWriteGuard {
+            Ok(RwLockWriteGuardArc {
                 lock: Self::into_arc(guard),
             })
         } else {
@@ -927,19 +927,19 @@ impl<T: ?Sized> ArcRwLockUpgradableReadGuard<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
     /// let reader = lock.upgradable_read_arc().await;
     /// assert_eq!(*reader, 1);
     ///
-    /// let mut writer = ArcRwLockUpgradableReadGuard::upgrade(reader).await;
+    /// let mut writer = RwLockUpgradableReadGuardArc::upgrade(reader).await;
     /// *writer = 2;
     /// # })
     /// ```
     #[inline]
-    pub fn upgrade(guard: Self) -> ArcUpgrade<T> {
+    pub fn upgrade(guard: Self) -> UpgradeArc<T> {
         // We need to do some ugly lying about lifetimes;
         // See the comment on the `raw` field of `ArcUpgrade`
         // for an explanation.
@@ -950,8 +950,8 @@ impl<T: ?Sized> ArcRwLockUpgradableReadGuard<T> {
         // SAFETY: see above explanation.
         let raw: RawUpgrade<'static> = unsafe { mem::transmute(raw) };
 
-        ArcUpgrade {
-            raw,
+        UpgradeArc {
+            raw: ManuallyDrop::new(raw),
             lock: ManuallyDrop::new(Self::into_arc(guard)),
         }
     }
@@ -1091,14 +1091,14 @@ impl<T: ?Sized> DerefMut for RwLockWriteGuard<'_, T> {
 
 /// An owned, reference-counted guard that releases the write lock when dropped.
 #[clippy::has_significant_drop]
-pub struct ArcRwLockWriteGuard<T: ?Sized> {
+pub struct RwLockWriteGuardArc<T: ?Sized> {
     lock: Arc<RwLock<T>>,
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for ArcRwLockWriteGuard<T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for ArcRwLockWriteGuard<T> {}
+unsafe impl<T: Send + Sync + ?Sized> Send for RwLockWriteGuardArc<T> {}
+unsafe impl<T: Send + Sync + ?Sized> Sync for RwLockWriteGuardArc<T> {}
 
-impl<T: ?Sized> Drop for ArcRwLockWriteGuard<T> {
+impl<T: ?Sized> Drop for RwLockWriteGuardArc<T> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: we are dropping a write lock.
@@ -1108,7 +1108,7 @@ impl<T: ?Sized> Drop for ArcRwLockWriteGuard<T> {
     }
 }
 
-impl<T> ArcRwLockWriteGuard<T> {
+impl<T> RwLockWriteGuardArc<T> {
     /// Downgrades into a regular reader guard.
     ///
     /// # Examples
@@ -1116,7 +1116,7 @@ impl<T> ArcRwLockWriteGuard<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockWriteGuard};
+    /// use async_lock::{RwLock, RwLockWriteGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -1125,25 +1125,25 @@ impl<T> ArcRwLockWriteGuard<T> {
     ///
     /// assert!(lock.try_read_arc().is_none());
     ///
-    /// let reader = ArcRwLockWriteGuard::downgrade(writer);
+    /// let reader = RwLockWriteGuardArc::downgrade(writer);
     /// assert_eq!(*reader, 2);
     ///
     /// assert!(lock.try_read_arc().is_some());
     /// # })
     /// ```
     #[inline]
-    pub fn downgrade(guard: Self) -> ArcRwLockReadGuard<T> {
+    pub fn downgrade(guard: Self) -> RwLockReadGuardArc<T> {
         // SAFETY: `write` is a write guard
         unsafe {
             guard.lock.raw.downgrade_write();
         }
 
         // SAFETY: we just downgraded to a read lock
-        unsafe { ArcRwLockReadGuard::from_arc(Self::into_arc(guard)) }
+        unsafe { RwLockReadGuardArc::from_arc(Self::into_arc(guard)) }
     }
 }
 
-impl<T: ?Sized> ArcRwLockWriteGuard<T> {
+impl<T: ?Sized> RwLockWriteGuardArc<T> {
     /// Consumes the lock (without dropping) and returns the underlying `Arc`.
     #[inline]
     fn into_arc(guard: Self) -> Arc<RwLock<T>> {
@@ -1159,7 +1159,7 @@ impl<T: ?Sized> ArcRwLockWriteGuard<T> {
     /// ```
     /// # futures_lite::future::block_on(async {
     /// use std::sync::Arc;
-    /// use async_lock::{RwLock, ArcRwLockUpgradableReadGuard, ArcRwLockWriteGuard};
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc, RwLockWriteGuardArc};
     ///
     /// let lock = Arc::new(RwLock::new(1));
     ///
@@ -1168,43 +1168,43 @@ impl<T: ?Sized> ArcRwLockWriteGuard<T> {
     ///
     /// assert!(lock.try_read_arc().is_none());
     ///
-    /// let reader = ArcRwLockWriteGuard::downgrade_to_upgradable(writer);
+    /// let reader = RwLockWriteGuardArc::downgrade_to_upgradable(writer);
     /// assert_eq!(*reader, 2);
     ///
     /// assert!(lock.try_write_arc().is_none());
     /// assert!(lock.try_read_arc().is_some());
     ///
-    /// assert!(ArcRwLockUpgradableReadGuard::try_upgrade(reader).is_ok())
+    /// assert!(RwLockUpgradableReadGuardArc::try_upgrade(reader).is_ok())
     /// # })
     /// ```
     #[inline]
-    pub fn downgrade_to_upgradable(guard: Self) -> ArcRwLockUpgradableReadGuard<T> {
+    pub fn downgrade_to_upgradable(guard: Self) -> RwLockUpgradableReadGuardArc<T> {
         // SAFETY: `guard` is a write guard
         unsafe {
             guard.lock.raw.downgrade_to_upgradable();
         }
 
-        ArcRwLockUpgradableReadGuard {
+        RwLockUpgradableReadGuardArc {
             lock: Self::into_arc(guard),
         }
     }
 }
 
-impl<T: fmt::Debug + ?Sized> fmt::Debug for ArcRwLockWriteGuard<T> {
+impl<T: fmt::Debug + ?Sized> fmt::Debug for RwLockWriteGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: fmt::Display + ?Sized> fmt::Display for ArcRwLockWriteGuard<T> {
+impl<T: fmt::Display + ?Sized> fmt::Display for RwLockWriteGuardArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
 
-impl<T: ?Sized> Deref for ArcRwLockWriteGuard<T> {
+impl<T: ?Sized> Deref for RwLockWriteGuardArc<T> {
     type Target = T;
 
     #[inline]
@@ -1213,7 +1213,7 @@ impl<T: ?Sized> Deref for ArcRwLockWriteGuard<T> {
     }
 }
 
-impl<T: ?Sized> DerefMut for ArcRwLockWriteGuard<T> {
+impl<T: ?Sized> DerefMut for RwLockWriteGuardArc<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *self.lock.value.get() }
