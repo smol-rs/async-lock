@@ -638,7 +638,12 @@ impl<T: ?Sized> MutexGuardArc<T> {
     /// dbg!(MutexGuardArc::source(&guard));
     /// # })
     /// ```
-    pub fn source(guard: &MutexGuardArc<T>) -> &Arc<Mutex<T>> {
+    pub fn source(guard: &Self) -> &Arc<Mutex<T>>
+    where
+        // Required because `MutexGuardArc` implements `Sync` regardless of whether `T` is `Send`,
+        // but this method allows dropping `T` from a different thead than it was created in.
+        T: Send,
+    {
         &guard.0
     }
 }
