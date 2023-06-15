@@ -268,6 +268,9 @@ pub struct Lock<'a, T: ?Sized> {
     acquire_slow: Option<AcquireSlow<&'a Mutex<T>, T>>,
 }
 
+unsafe impl<T: Send + ?Sized> Send for Lock<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for Lock<'_, T> {}
+
 impl<'a, T: ?Sized> Unpin for Lock<'a, T> {}
 
 impl<T: ?Sized> fmt::Debug for Lock<'_, T> {
@@ -318,6 +321,9 @@ enum LockArcInnards<T: ?Sized> {
     /// Empty hole to make taking easier.
     Empty,
 }
+
+unsafe impl<T: Send + ?Sized> Send for LockArc<T> {}
+unsafe impl<T: Sync + ?Sized> Sync for LockArc<T> {}
 
 impl<T: ?Sized> Unpin for LockArc<T> {}
 

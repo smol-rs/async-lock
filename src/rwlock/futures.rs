@@ -20,8 +20,8 @@ pub struct Read<'a, T: ?Sized> {
     pub(super) value: *const T,
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for Read<'_, T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for Read<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Send for Read<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for Read<'_, T> {}
 
 impl<T: ?Sized> fmt::Debug for Read<'_, T> {
     #[inline]
@@ -90,7 +90,7 @@ pub struct UpgradableRead<'a, T: ?Sized> {
 }
 
 unsafe impl<T: Send + Sync + ?Sized> Send for UpgradableRead<'_, T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for UpgradableRead<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for UpgradableRead<'_, T> {}
 
 impl<T: ?Sized> fmt::Debug for UpgradableRead<'_, T> {
     #[inline]
@@ -156,8 +156,8 @@ pub struct Write<'a, T: ?Sized> {
     pub(super) value: *mut T,
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for Write<'_, T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for Write<'_, T> {}
+unsafe impl<T: Send + ?Sized> Send for Write<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for Write<'_, T> {}
 
 impl<T: ?Sized> fmt::Debug for Write<'_, T> {
     #[inline]
@@ -223,6 +223,9 @@ pub struct Upgrade<'a, T: ?Sized> {
     /// Pointer to the value protected by the lock. Invariant in `T`.
     pub(super) value: *mut T,
 }
+
+unsafe impl<T: Send + ?Sized> Send for Upgrade<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for Upgrade<'_, T> {}
 
 impl<T: ?Sized> fmt::Debug for Upgrade<'_, T> {
     #[inline]
