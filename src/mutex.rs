@@ -380,7 +380,7 @@ struct AcquireSlow<B: Borrow<Mutex<T>>, T: ?Sized> {
     listener: Option<EventListener>,
 
     /// The point at which the mutex lock was started.
-    #[cfg(not(any(target_arch = "wasm32", target_os = "wasm64")))]
+    #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
     start: Option<Instant>,
 
     /// This lock operation is starving.
@@ -399,7 +399,7 @@ impl<T: ?Sized, B: Borrow<Mutex<T>>> AcquireSlow<B, T> {
         AcquireSlow {
             mutex: Some(mutex),
             listener: None,
-            #[cfg(not(any(target_arch = "wasm32", target_os = "wasm64")))]
+            #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
             start: None,
             starved: false,
             _marker: PhantomData,
