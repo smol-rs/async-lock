@@ -1,3 +1,13 @@
+# Version 2.8.0
+
+- Fix a bug where the `SemaphoreGuard::acquire_arc` future would busy wait under certain conditions (#42).
+- Add a `Semaphore::add_permits()` function to increase the number of available permits on the semaphore (#44).
+- Make `RwLockReadGuard` covariant over its lifetime (#45)
+- Add `RwLockReadGuardArc`, `RwLockWriteGuardArc`, and other reference counted guards for the `RwLock` type (#47).
+- Loosen the `Send`/`Sync` bounds on certain future types (#48).
+- Fix UB caused by the `MutexGuardArc::source` function allowing the user to drop an object in a different thread than the one it was acquired in (#50). This is a breaking change, but in the name of soundness. Therefore it doesn't break any valid behavior.
+- Fix a bug where this crate would not compile properly on `wasm64` (#51).
+
 # Version 2.7.0
 
 - Replace some `async` blocks with manual futures (#34)
