@@ -1,19 +1,17 @@
-use std::borrow::Borrow;
-use std::cell::UnsafeCell;
-use std::fmt;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::pin::Pin;
-use std::process;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::Poll;
+use core::borrow::Borrow;
+use core::cell::UnsafeCell;
+use core::fmt;
+use core::marker::PhantomData;
+use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task::Poll;
+use core::usize;
 
-// Note: we cannot use `target_family = "wasm"` here because it requires Rust 1.54.
-#[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+use alloc::sync::Arc;
+
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 use std::time::{Duration, Instant};
-
-use std::usize;
 
 use event_listener::{Event, EventListener};
 use event_listener_strategy::{easy_wrapper, EventListenerFuture};
@@ -263,6 +261,7 @@ impl<T: Default + ?Sized> Default for Mutex<T> {
 easy_wrapper! {
     /// The future returned by [`Mutex::lock`].
     pub struct Lock<'a, T: ?Sized>(LockInner<'a, T> => MutexGuard<'a, T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub(crate) wait();
 }
 
@@ -320,6 +319,7 @@ impl<'a, T: ?Sized> EventListenerFuture for LockInner<'a, T> {
 easy_wrapper! {
     /// The future returned by [`Mutex::lock_arc`].
     pub struct LockArc<T: ?Sized>(LockArcInnards<T> => MutexGuardArc<T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub(crate) wait();
 }
 
@@ -412,7 +412,7 @@ pin_project_lite::pin_project! {
 
 /// `pin_project_lite` doesn't support `#[cfg]` yet, so we have to do this manually.
 struct Start {
-    #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     start: Option<Instant>,
 }
 
@@ -430,7 +430,7 @@ impl<T: ?Sized, B: Borrow<Mutex<T>>> AcquireSlow<B, T> {
             mutex: Some(mutex),
             listener,
             start: Start {
-                #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+                #[cfg(all(feature = "std", not(target_family = "wasm")))]
                 start: None,
             },
             starved: false,
@@ -464,7 +464,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
         context: &mut S::Context,
     ) -> Poll<Self::Output> {
         let mut this = self.as_mut().project();
-        #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+        #[cfg(all(feature = "std", not(target_family = "wasm")))]
         let start = *this.start.start.get_or_insert_with(Instant::now);
         let mutex = Borrow::<Mutex<T>>::borrow(
             this.mutex.as_ref().expect("future polled after completion"),
@@ -518,7 +518,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
 
                     // If waiting for too long, fall back to a fairer locking strategy that will prevent
                     // newer lock operations from starving us forever.
-                    #[cfg(not(any(target_arch = "wasm32", target_arch = "wasm64")))]
+                    #[cfg(all(feature = "std", not(target_family = "wasm")))]
                     if start.elapsed() > Duration::from_micros(500) {
                         break;
                     }
@@ -528,7 +528,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
             // Increment the number of starved lock operations.
             if mutex.state.fetch_add(2, Ordering::Release) > usize::MAX / 2 {
                 // In case of potential overflow, abort.
-                process::abort();
+                crate::abort();
             }
 
             // Indicate that we are now starving and will use a fairer locking strategy.

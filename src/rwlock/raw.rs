@@ -6,12 +6,11 @@
 //! the locking code only once, and also lets us make
 //! [`RwLockReadGuard`](super::RwLockReadGuard) covariant in `T`.
 
-use std::future::Future;
-use std::mem::forget;
-use std::pin::Pin;
-use std::process;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll};
+use core::future::Future;
+use core::mem::forget;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task::{Context, Poll};
 
 use event_listener::{Event, EventListener};
 
@@ -66,8 +65,8 @@ impl RawRwLock {
             }
 
             // Make sure the number of readers doesn't overflow.
-            if state > std::isize::MAX as usize {
-                process::abort();
+            if state > core::isize::MAX as usize {
+                crate::abort();
             }
 
             // Increment the number of readers.
@@ -107,8 +106,8 @@ impl RawRwLock {
         let mut state = self.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > std::isize::MAX as usize {
-            process::abort();
+        if state > core::isize::MAX as usize {
+            crate::abort();
         }
 
         // Increment the number of readers.
@@ -308,8 +307,8 @@ impl<'a> Future for RawRead<'a> {
         loop {
             if *this.state & WRITER_BIT == 0 {
                 // Make sure the number of readers doesn't overflow.
-                if *this.state > std::isize::MAX as usize {
-                    process::abort();
+                if *this.state > core::isize::MAX as usize {
+                    crate::abort();
                 }
 
                 // If nobody is holding a write lock or attempting to acquire it, increment the
@@ -375,8 +374,8 @@ impl<'a> Future for RawUpgradableRead<'a> {
         let mut state = this.lock.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > std::isize::MAX as usize {
-            process::abort();
+        if state > core::isize::MAX as usize {
+            crate::abort();
         }
 
         // Increment the number of readers.

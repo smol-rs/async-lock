@@ -1,9 +1,10 @@
-use std::fmt;
-use std::future::Future;
-use std::mem::ManuallyDrop;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use core::fmt;
+use core::future::Future;
+use core::mem::ManuallyDrop;
+use core::pin::Pin;
+use core::task::{Context, Poll};
+
+use alloc::sync::Arc;
 
 use super::raw::{RawRead, RawUpgradableRead, RawUpgrade, RawWrite};
 use super::{

@@ -7,6 +7,7 @@
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
 
+#![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 #![doc(
     html_favicon_url = "https://raw.githubusercontent.com/smol-rs/smol/master/assets/images/logo_fullsize_transparent.png"
@@ -14,6 +15,8 @@
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/smol-rs/smol/master/assets/images/logo_fullsize_transparent.png"
 )]
+
+extern crate alloc;
 
 /// Simple macro to extract the value of `Poll` or return `Pending`.
 ///
@@ -38,7 +41,7 @@ macro_rules! pin {
             let mut $x = $x;
             #[allow(unused_mut)]
             let mut $x = unsafe {
-                std::pin::Pin::new_unchecked(&mut $x)
+                core::pin::Pin::new_unchecked(&mut $x)
             };
         )*
     }
@@ -68,4 +71,26 @@ pub mod futures {
         Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, UpgradeArc, Write, WriteArc,
     };
     pub use crate::semaphore::{Acquire, AcquireArc};
+}
+
+#[cold]
+fn abort() -> ! {
+    // For no_std targets, panicking while panicking is defined as an abort
+    #[cfg(not(feature = "std"))]
+    {
+        struct Bomb;
+
+        impl Drop for Bomb {
+            fn drop(&mut self) {
+                panic!("Panicking while panicking to abort")
+            }
+        }
+
+        let _bomb = Bomb;
+        panic!("Panicking while panicking to abort")
+    }
+
+    // For libstd targets, abort using std::process::abort
+    #[cfg(feature = "std")]
+    std::process::abort()
 }

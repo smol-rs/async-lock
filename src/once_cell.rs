@@ -1,14 +1,16 @@
-use std::cell::UnsafeCell;
-use std::convert::Infallible;
-use std::fmt;
-use std::future::Future;
-use std::mem::{forget, MaybeUninit};
-use std::ptr;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
+use core::cell::UnsafeCell;
+use core::convert::Infallible;
+use core::fmt;
+use core::future::Future;
+use core::mem::{forget, MaybeUninit};
+use core::ptr;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
 use event_listener::{Event, EventListener};
-use event_listener_strategy::{Blocking, NonBlocking, Strategy};
+use event_listener_strategy::{NonBlocking, Strategy};
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -319,6 +321,7 @@ impl<T> OnceCell<T> {
     ///
     /// assert_eq!(cell.wait_blocking(), &1);
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn wait_blocking(&self) -> &T {
         // Fast path: see if the value is already initialized.
         if let Some(value) = self.get() {
@@ -423,6 +426,7 @@ impl<T> OnceCell<T> {
     ///
     /// assert_eq!(result.unwrap(), &1);
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn get_or_try_init_blocking<E>(
         &self,
         closure: impl FnOnce() -> Result<T, E>,
@@ -435,8 +439,8 @@ impl<T> OnceCell<T> {
         // Slow path: initialize the value.
         // The futures provided should never block, so we can use `now_or_never`.
         now_or_never(self.initialize_or_wait(
-            move || std::future::ready(closure()),
-            &mut Blocking::default(),
+            move || core::future::ready(closure()),
+            &mut event_listener_strategy::Blocking::default(),
         ))?;
         debug_assert!(self.is_initialized());
 
@@ -497,6 +501,7 @@ impl<T> OnceCell<T> {
     /// assert_eq!(cell.get_or_init_blocking(|| 1), &1);
     /// assert_eq!(cell.get_or_init_blocking(|| 2), &1);
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn get_or_init_blocking(&self, closure: impl FnOnce() -> T + Unpin) -> &T {
         match self.get_or_try_init_blocking(move || {
             let result: Result<T, Infallible> = Ok(closure());
@@ -563,6 +568,7 @@ impl<T> OnceCell<T> {
     /// assert_eq!(cell.get(), Some(&1));
     /// assert_eq!(cell.set_blocking(2), Err(2));
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn set_blocking(&self, value: T) -> Result<&T, T> {
         let mut value = Some(value);
         self.get_or_init_blocking(|| value.take().unwrap());
@@ -643,8 +649,8 @@ impl<T> OnceCell<T> {
                                 .store(State::Initialized.into(), Ordering::Release);
 
                             // Notify the listeners that the value is initialized.
-                            self.active_initializers.notify_additional(std::usize::MAX);
-                            self.passive_waiters.notify_additional(std::usize::MAX);
+                            self.active_initializers.notify_additional(core::usize::MAX);
+                            self.passive_waiters.notify_additional(core::usize::MAX);
 
                             return Ok(());
                         }
@@ -758,6 +764,7 @@ impl<T> Drop for OnceCell<T> {
 }
 
 /// Either return the result of a future now, or panic.
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     const NOOP_WAKER: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 

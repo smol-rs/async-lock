@@ -1,9 +1,10 @@
-use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use core::fmt;
+use core::future::Future;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task::{Context, Poll};
+
+use alloc::sync::Arc;
 
 use event_listener::{Event, EventListener};
 
@@ -147,7 +148,7 @@ impl Semaphore {
     pub fn acquire_arc(self: &Arc<Self>) -> AcquireArc {
         AcquireArc {
             semaphore: self.clone(),
-            listener: None,
+            listener: EventListener::new(&self.event),
         }
     }
 
@@ -216,15 +217,16 @@ impl<'a> Future for Acquire<'a> {
     }
 }
 
-/// The future returned by [`Semaphore::acquire_arc`].
-pub struct AcquireArc {
-    /// The semaphore being acquired.
-    semaphore: Arc<Semaphore>,
+pin_project_lite::pin_project! {
+    /// The future returned by [`Semaphore::acquire_arc`].
+    pub struct AcquireArc {
+        // The semaphore being acquired.
+        semaphore: Arc<Semaphore>,
 
-    /// The listener waiting on the semaphore.
-    ///
-    /// TODO: At the next breaking release, remove the `Pin<Box<>>` and make this type `!Unpin`.
-    listener: Option<Pin<Box<EventListener>>>,
+        // The listener waiting on the semaphore.
+        #[pin]
+        listener: EventListener,
+    }
 }
 
 impl fmt::Debug for AcquireArc {
@@ -233,30 +235,21 @@ impl fmt::Debug for AcquireArc {
     }
 }
 
-impl Unpin for AcquireArc {}
-
 impl Future for AcquireArc {
     type Output = SemaphoreGuardArc;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
             match this.semaphore.try_acquire_arc() {
-                Some(guard) => {
-                    this.listener = None;
-                    return Poll::Ready(guard);
-                }
+                Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    match &mut this.listener {
-                        None => {
-                            this.listener = Some(this.semaphore.event.listen());
-                        }
-                        Some(ref mut listener) => {
-                            ready!(Pin::new(listener).poll(cx));
-                            this.listener = None;
-                        }
+                    if !this.listener.is_listening() {
+                        this.listener.as_mut().listen();
+                    } else {
+                        ready!(this.listener.as_mut().poll(cx));
                     }
                 }
             }
