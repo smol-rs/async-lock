@@ -15,7 +15,7 @@ categories = ["asynchronous", "concurrency"]
 exclude = ["/.*"]
 
 [dependencies]
-event-listener = "2.5.1"
+event-listener = "3.0.0"
 
 [dev-dependencies]
 async-channel = "1.5.0"
