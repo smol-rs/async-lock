@@ -6,7 +6,7 @@ name = "async-lock"
 version = "2.8.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
-rust-version = "1.48"
+rust-version = "1.59"
 description = "Async synchronization primitives"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/smol-rs/async-lock"
@@ -15,7 +15,13 @@ categories = ["asynchronous", "concurrency"]
 exclude = ["/.*"]
 
 [dependencies]
-event-listener = "2.5.1"
+event-listener = { version = "3.0.0", default-features = false }
+event-listener-strategy = { version = "0.2.0", default-features = false }
+pin-project-lite = "0.2.11"
+
+[features]
+default = ["std"]
+std = ["event-listener/std", "event-listener-strategy/std"]
 
 [dev-dependencies]
 async-channel = "1.5.0"

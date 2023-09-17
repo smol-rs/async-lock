@@ -1,9 +1,9 @@
 use event_listener::{Event, EventListener};
 
-use std::fmt;
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{Context, Poll};
+use core::fmt;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll};
 
 use crate::futures::Lock;
 use crate::Mutex;
@@ -82,21 +82,29 @@ impl Barrier {
         BarrierWait {
             barrier: self,
             lock: Some(self.state.lock()),
+            evl: EventListener::new(&self.event),
             state: WaitState::Initial,
         }
     }
 }
 
-/// The future returned by [`Barrier::wait()`].
-pub struct BarrierWait<'a> {
-    /// The barrier to wait on.
-    barrier: &'a Barrier,
+pin_project_lite::pin_project! {
+    /// The future returned by [`Barrier::wait()`].
+    pub struct BarrierWait<'a> {
+        // The barrier to wait on.
+        barrier: &'a Barrier,
 
-    /// The ongoing mutex lock operation we are blocking on.
-    lock: Option<Lock<'a, State>>,
+        // The ongoing mutex lock operation we are blocking on.
+        #[pin]
+        lock: Option<Lock<'a, State>>,
 
-    /// The current state of the future.
-    state: WaitState,
+        // An event listener for the `barrier.event` event.
+        #[pin]
+        evl: EventListener,
+
+        // The current state of the future.
+        state: WaitState,
+    }
 }
 
 impl fmt::Debug for BarrierWait<'_> {
@@ -110,64 +118,61 @@ enum WaitState {
     Initial,
 
     /// We are waiting for the listener to complete.
-    Waiting { evl: EventListener, local_gen: u64 },
+    Waiting { local_gen: u64 },
 
     /// Waiting to re-acquire the lock to check the state again.
-    Reacquiring(u64),
+    Reacquiring { local_gen: u64 },
 }
 
 impl Future for BarrierWait<'_> {
     type Output = BarrierWaitResult;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
             match this.state {
                 WaitState::Initial => {
                     // See if the lock is ready yet.
-                    let mut state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
-                    this.lock = None;
+                    let mut state = ready!(this.lock.as_mut().as_pin_mut().unwrap().poll(cx));
+                    this.lock.set(None);
 
                     let local_gen = state.generation_id;
                     state.count += 1;
 
                     if state.count < this.barrier.n {
                         // We need to wait for the event.
-                        this.state = WaitState::Waiting {
-                            evl: this.barrier.event.listen(),
-                            local_gen,
-                        };
+                        this.evl.as_mut().listen();
+                        *this.state = WaitState::Waiting { local_gen };
                     } else {
                         // We are the last one.
                         state.count = 0;
                         state.generation_id = state.generation_id.wrapping_add(1);
-                        this.barrier.event.notify(std::usize::MAX);
+                        this.barrier.event.notify(core::usize::MAX);
                         return Poll::Ready(BarrierWaitResult { is_leader: true });
                     }
                 }
 
-                WaitState::Waiting {
-                    ref mut evl,
-                    local_gen,
-                } => {
-                    ready!(Pin::new(evl).poll(cx));
+                WaitState::Waiting { local_gen } => {
+                    ready!(this.evl.as_mut().poll(cx));
 
                     // We are now re-acquiring the mutex.
-                    this.lock = Some(this.barrier.state.lock());
-                    this.state = WaitState::Reacquiring(local_gen);
+                    this.lock.set(Some(this.barrier.state.lock()));
+                    *this.state = WaitState::Reacquiring {
+                        local_gen: *local_gen,
+                    };
                 }
 
-                WaitState::Reacquiring(local_gen) => {
+                WaitState::Reacquiring { local_gen } => {
                     // Acquire the local state again.
-                    let state = ready!(Pin::new(this.lock.as_mut().unwrap()).poll(cx));
-                    this.lock = None;
+                    let state = ready!(this.lock.as_mut().as_pin_mut().unwrap().poll(cx));
+                    this.lock.set(None);
 
-                    if local_gen == state.generation_id && state.count < this.barrier.n {
+                    if *local_gen == state.generation_id && state.count < this.barrier.n {
                         // We need to wait for the event again.
-                        this.state = WaitState::Waiting {
-                            evl: this.barrier.event.listen(),
-                            local_gen,
+                        this.evl.as_mut().listen();
+                        *this.state = WaitState::Waiting {
+                            local_gen: *local_gen,
                         };
                     } else {
                         // We are ready, but not the leader.

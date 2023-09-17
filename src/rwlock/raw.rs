@@ -6,12 +6,11 @@
 //! the locking code only once, and also lets us make
 //! [`RwLockReadGuard`](super::RwLockReadGuard) covariant in `T`.
 
-use std::future::Future;
-use std::mem::forget;
-use std::pin::Pin;
-use std::process;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::task::{Context, Poll};
+use core::future::Future;
+use core::mem::forget;
+use core::pin::Pin;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::task::{Context, Poll};
 
 use event_listener::{Event, EventListener};
 
@@ -66,8 +65,8 @@ impl RawRwLock {
             }
 
             // Make sure the number of readers doesn't overflow.
-            if state > std::isize::MAX as usize {
-                process::abort();
+            if state > core::isize::MAX as usize {
+                crate::abort();
             }
 
             // Increment the number of readers.
@@ -88,7 +87,7 @@ impl RawRwLock {
         RawRead {
             lock: self,
             state: self.state.load(Ordering::Acquire),
-            listener: None,
+            listener: EventListener::new(&self.no_writer),
         }
     }
 
@@ -107,8 +106,8 @@ impl RawRwLock {
         let mut state = self.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > std::isize::MAX as usize {
-            process::abort();
+        if state > core::isize::MAX as usize {
+            crate::abort();
         }
 
         // Increment the number of readers.
@@ -163,7 +162,10 @@ impl RawRwLock {
     pub(super) fn write(&self) -> RawWrite<'_> {
         RawWrite {
             lock: self,
-            state: WriteState::Acquiring(self.mutex.lock()),
+            no_readers: EventListener::new(&self.no_readers),
+            state: WriteState::Acquiring {
+                lock: self.mutex.lock(),
+            },
         }
     }
 
@@ -192,7 +194,7 @@ impl RawRwLock {
 
         RawUpgrade {
             lock: Some(self),
-            listener: None,
+            listener: EventListener::new(&self.no_readers),
         }
     }
 
@@ -280,98 +282,100 @@ impl RawRwLock {
     }
 }
 
-/// The future returned by [`RawRwLock::read`].
+pin_project_lite::pin_project! {
+    /// The future returned by [`RawRwLock::read`].
 
-pub(super) struct RawRead<'a> {
-    /// The lock that is being acquired.
-    pub(super) lock: &'a RawRwLock,
+    pub(super) struct RawRead<'a> {
+        // The lock that is being acquired.
+        pub(super) lock: &'a RawRwLock,
 
-    /// The last-observed state of the lock.
-    state: usize,
+        // The last-observed state of the lock.
+        state: usize,
 
-    /// The listener for the "no writers" event.
-    listener: Option<EventListener>,
+        // The listener for the "no writers" event.
+        #[pin]
+        listener: EventListener,
+    }
 }
 
 impl<'a> Future for RawRead<'a> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
-            if this.state & WRITER_BIT == 0 {
+            if *this.state & WRITER_BIT == 0 {
                 // Make sure the number of readers doesn't overflow.
-                if this.state > std::isize::MAX as usize {
-                    process::abort();
+                if *this.state > core::isize::MAX as usize {
+                    crate::abort();
                 }
 
                 // If nobody is holding a write lock or attempting to acquire it, increment the
                 // number of readers.
                 match this.lock.state.compare_exchange(
-                    this.state,
-                    this.state + ONE_READER,
+                    *this.state,
+                    *this.state + ONE_READER,
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 ) {
                     Ok(_) => return Poll::Ready(()),
-                    Err(s) => this.state = s,
+                    Err(s) => *this.state = s,
                 }
             } else {
                 // Start listening for "no writer" events.
-                let load_ordering = match &mut this.listener {
-                    None => {
-                        this.listener = Some(this.lock.no_writer.listen());
+                let load_ordering = if !this.listener.is_listening() {
+                    this.listener.as_mut().listen();
 
-                        // Make sure there really is no writer.
-                        Ordering::SeqCst
-                    }
+                    // Make sure there really is no writer.
+                    Ordering::SeqCst
+                } else {
+                    // Wait for the writer to finish.
+                    ready!(this.listener.as_mut().poll(cx));
 
-                    Some(ref mut listener) => {
-                        // Wait for the writer to finish.
-                        ready!(Pin::new(listener).poll(cx));
-                        this.listener = None;
+                    // Notify the next reader waiting in list.
+                    this.lock.no_writer.notify(1);
 
-                        // Notify the next reader waiting in list.
-                        this.lock.no_writer.notify(1);
-
-                        // Check the state again.
-                        Ordering::Acquire
-                    }
+                    // Check the state again.
+                    Ordering::Acquire
                 };
 
                 // Reload the state.
-                this.state = this.lock.state.load(load_ordering);
+                *this.state = this.lock.state.load(load_ordering);
             }
         }
     }
 }
 
-/// The future returned by [`RawRwLock::upgradable_read`].
+pin_project_lite::pin_project! {
+    /// The future returned by [`RawRwLock::upgradable_read`].
 
-pub(super) struct RawUpgradableRead<'a> {
-    /// The lock that is being acquired.
-    pub(super) lock: &'a RawRwLock,
+    pub(super) struct RawUpgradableRead<'a> {
+        // The lock that is being acquired.
+        pub(super) lock: &'a RawRwLock,
 
-    /// The mutex we are trying to acquire.
-    acquire: Lock<'a, ()>,
+        // The mutex we are trying to acquire.
+        #[pin]
+        acquire: Lock<'a, ()>,
+    }
 }
 
 impl<'a> Future for RawUpgradableRead<'a> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let this = self.get_mut();
+        let this = self.project();
 
         // Acquire the mutex.
-        let mutex_guard = ready!(Pin::new(&mut this.acquire).poll(cx));
+        let mutex_guard = ready!(this.acquire.poll(cx));
         forget(mutex_guard);
 
+        // Load the current state.
         let mut state = this.lock.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > std::isize::MAX as usize {
-            process::abort();
+        if state > core::isize::MAX as usize {
+            crate::abort();
         }
 
         // Increment the number of readers.
@@ -391,41 +395,61 @@ impl<'a> Future for RawUpgradableRead<'a> {
     }
 }
 
-/// The future returned by [`RawRwLock::write`].
+pin_project_lite::pin_project! {
+    /// The future returned by [`RawRwLock::write`].
 
-pub(super) struct RawWrite<'a> {
-    /// The lock that is being acquired.
-    pub(super) lock: &'a RawRwLock,
+    pub(super) struct RawWrite<'a> {
+        // The lock that is being acquired.
+        pub(super) lock: &'a RawRwLock,
 
-    /// Current state fof this future.
-    state: WriteState<'a>,
+        // Our listener for the "no readers" event.
+        #[pin]
+        no_readers: EventListener,
+
+        // Current state fof this future.
+        #[pin]
+        state: WriteState<'a>,
+    }
+
+    impl PinnedDrop for RawWrite<'_> {
+        fn drop(this: Pin<&mut Self>) {
+            let this = this.project();
+
+            if matches!(this.state.project(), WriteStateProj::WaitingReaders) {
+                // Safety: we hold a write lock, more or less.
+                unsafe {
+                    this.lock.write_unlock();
+                }
+            }
+        }
+    }
 }
 
-enum WriteState<'a> {
-    /// We are currently acquiring the inner mutex.
-    Acquiring(Lock<'a, ()>),
+pin_project_lite::pin_project! {
+    #[project = WriteStateProj]
+    enum WriteState<'a> {
+        // We are currently acquiring the inner mutex.
+        Acquiring { #[pin] lock: Lock<'a, ()> },
 
-    /// We are currently waiting for readers to finish.
-    WaitingReaders {
-        /// The listener for the "no readers" event.
-        listener: Option<EventListener>,
-    },
+        // We are currently waiting for readers to finish.
+        WaitingReaders,
 
-    /// The future has completed.
-    Acquired,
+        // The future has completed.
+        Acquired,
+    }
 }
 
 impl<'a> Future for RawWrite<'a> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
-        let this = self.get_mut();
+        let mut this = self.project();
 
         loop {
-            match &mut this.state {
-                WriteState::Acquiring(lock) => {
+            match this.state.as_mut().project() {
+                WriteStateProj::Acquiring { lock } => {
                     // First grab the mutex.
-                    let mutex_guard = ready!(Pin::new(lock).poll(cx));
+                    let mutex_guard = ready!(lock.poll(cx));
                     forget(mutex_guard);
 
                     // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
@@ -433,18 +457,17 @@ impl<'a> Future for RawWrite<'a> {
 
                     // If we just acquired the lock, return.
                     if new_state == WRITER_BIT {
-                        this.state = WriteState::Acquired;
+                        this.state.as_mut().set(WriteState::Acquired);
                         return Poll::Ready(());
                     }
 
                     // Start waiting for the readers to finish.
-                    this.state = WriteState::WaitingReaders {
-                        listener: Some(this.lock.no_readers.listen()),
-                    };
+                    this.no_readers.as_mut().listen();
+                    this.state.as_mut().set(WriteState::WaitingReaders);
                 }
 
-                WriteState::WaitingReaders { ref mut listener } => {
-                    let load_ordering = if listener.is_some() {
+                WriteStateProj::WaitingReaders => {
+                    let load_ordering = if this.no_readers.is_listening() {
                         Ordering::Acquire
                     } else {
                         Ordering::SeqCst
@@ -453,60 +476,60 @@ impl<'a> Future for RawWrite<'a> {
                     // Check the state again.
                     if this.lock.state.load(load_ordering) == WRITER_BIT {
                         // We are the only ones holding the lock, return `Ready`.
-                        this.state = WriteState::Acquired;
+                        this.state.as_mut().set(WriteState::Acquired);
                         return Poll::Ready(());
                     }
 
                     // Wait for the readers to finish.
-                    match listener {
-                        None => {
-                            // Register a listener.
-                            *listener = Some(this.lock.no_readers.listen());
-                        }
-
-                        Some(ref mut evl) => {
-                            // Wait for the readers to finish.
-                            ready!(Pin::new(evl).poll(cx));
-                            *listener = None;
-                        }
+                    if !this.no_readers.is_listening() {
+                        // Register a listener.
+                        this.no_readers.as_mut().listen();
+                    } else {
+                        // Wait for the readers to finish.
+                        ready!(this.no_readers.as_mut().poll(cx));
                     };
                 }
-                WriteState::Acquired => panic!("Write lock already acquired"),
+                WriteStateProj::Acquired => panic!("Write lock already acquired"),
             }
         }
     }
 }
 
-impl<'a> Drop for RawWrite<'a> {
-    fn drop(&mut self) {
-        if matches!(self.state, WriteState::WaitingReaders { .. }) {
-            // Safety: we hold a write lock, more or less.
-            unsafe {
-                self.lock.write_unlock();
+pin_project_lite::pin_project! {
+    /// The future returned by [`RawRwLock::upgrade`].
+
+    pub(super) struct RawUpgrade<'a> {
+        lock: Option<&'a RawRwLock>,
+
+        // The event listener we are waiting on.
+        #[pin]
+        listener: EventListener,
+    }
+
+    impl PinnedDrop for RawUpgrade<'_> {
+        fn drop(this: Pin<&mut Self>) {
+            let this = this.project();
+            if let Some(lock) = this.lock {
+                // SAFETY: we are dropping the future that would give us a write lock,
+                // so we don't need said lock anymore.
+                unsafe {
+                    lock.write_unlock();
+                }
             }
         }
     }
-}
-
-/// The future returned by [`RawRwLock::upgrade`].
-
-pub(super) struct RawUpgrade<'a> {
-    lock: Option<&'a RawRwLock>,
-
-    /// The event listener we are waiting on.
-    listener: Option<EventListener>,
 }
 
 impl<'a> Future for RawUpgrade<'a> {
     type Output = &'a RawRwLock;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<&'a RawRwLock> {
-        let this = self.get_mut();
+        let mut this = self.project();
         let lock = this.lock.expect("cannot poll future after completion");
 
         // If there are readers, we need to wait for them to finish.
         loop {
-            let load_ordering = if this.listener.is_some() {
+            let load_ordering = if this.listener.is_listening() {
                 Ordering::Acquire
             } else {
                 Ordering::SeqCst
@@ -519,35 +542,17 @@ impl<'a> Future for RawUpgrade<'a> {
             }
 
             // If there are readers, wait for them to finish.
-            match &mut this.listener {
-                None => {
-                    // Start listening for "no readers" events.
-                    this.listener = Some(lock.no_readers.listen());
-                }
-
-                Some(ref mut listener) => {
-                    // Wait for the readers to finish.
-                    ready!(Pin::new(listener).poll(cx));
-                    this.listener = None;
-                }
-            }
+            if !this.listener.is_listening() {
+                // Start listening for "no readers" events.
+                this.listener.as_mut().listen();
+            } else {
+                // Wait for the readers to finish.
+                ready!(this.listener.as_mut().poll(cx));
+            };
         }
 
         // We are done.
         Poll::Ready(this.lock.take().unwrap())
-    }
-}
-
-impl<'a> Drop for RawUpgrade<'a> {
-    #[inline]
-    fn drop(&mut self) {
-        if let Some(lock) = self.lock {
-            // SAFETY: we are dropping the future that would give us a write lock,
-            // so we don't need said lock anymore.
-            unsafe {
-                lock.write_unlock();
-            }
-        }
     }
 }
 

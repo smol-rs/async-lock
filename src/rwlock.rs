@@ -1,9 +1,10 @@
-use std::cell::UnsafeCell;
-use std::fmt;
-use std::mem::{self, ManuallyDrop};
-use std::ops::{Deref, DerefMut};
-use std::ptr::{self, NonNull};
-use std::sync::Arc;
+use core::cell::UnsafeCell;
+use core::fmt;
+use core::mem::{self, ManuallyDrop};
+use core::ops::{Deref, DerefMut};
+use core::ptr::{self, NonNull};
+
+use alloc::sync::Arc;
 
 pub(crate) mod futures;
 mod raw;
