@@ -44,3 +44,42 @@ fn smoke() {
         }
     });
 }
+
+#[test]
+fn smoke_blocking() {
+    future::block_on(async move {
+        const N: usize = 10;
+
+        let barrier = Arc::new(Barrier::new(N));
+
+        for _ in 0..10 {
+            let (tx, rx) = async_channel::unbounded();
+
+            for _ in 0..N - 1 {
+                let c = barrier.clone();
+                let tx = tx.clone();
+
+                thread::spawn(move || {
+                    let res = c.wait_blocking();
+                    tx.send_blocking(res.is_leader()).unwrap();
+                });
+            }
+
+            // At this point, all spawned threads should be blocked,
+            // so we shouldn't get anything from the cahnnel.
+            let res = rx.try_recv();
+            assert!(res.is_err());
+
+            let mut leader_found = barrier.wait_blocking().is_leader();
+
+            // Now, the barrier is cleared and we should get data.
+            for _ in 0..N - 1 {
+                if rx.recv().await.unwrap() {
+                    assert!(!leader_found);
+                    leader_found = true;
+                }
+            }
+            assert!(leader_found);
+        }
+    });
+}
