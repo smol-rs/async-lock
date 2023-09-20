@@ -112,6 +112,33 @@ impl<T: ?Sized> Mutex<T> {
         })
     }
 
+    /// Acquires the mutex using the blocking strategy.
+    ///
+    /// Returns a guard that releases the mutex when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`lock`] method, this method will
+    /// block the current thread until the lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Mutex;
+    ///
+    /// let mutex = Mutex::new(10);
+    /// let guard = mutex.lock_blocking();
+    /// assert_eq!(*guard, 10);
+    /// ```
+    #[inline]
+    pub fn lock_blocking(&self) -> MutexGuard<'_, T> {
+        self.lock().wait()
+    }
+
     /// Attempts to acquire the mutex.
     ///
     /// If the mutex could not be acquired at this time, then [`None`] is returned. Otherwise, a
@@ -197,6 +224,34 @@ impl<T: ?Sized> Mutex<T> {
         LockArc::_new(LockArcInnards::Unpolled {
             mutex: Some(self.clone()),
         })
+    }
+
+    /// Acquires the mutex and clones a reference to it using the blocking strategy.
+    ///
+    /// Returns an owned guard that releases the mutex when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`lock_arc`] method, this method will
+    /// block the current thread until the lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an `async` function or block may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Mutex;
+    /// use std::sync::Arc;
+    ///
+    /// let mutex = Arc::new(Mutex::new(10));
+    /// let guard = mutex.lock_arc_blocking();
+    /// assert_eq!(*guard, 10);
+    /// ```
+    #[inline]
+    pub fn lock_arc_blocking(self: &Arc<Self>) -> MutexGuardArc<T> {
+        self.lock_arc().wait()
     }
 
     /// Attempts to acquire the mutex and clone a reference to it.
@@ -291,7 +346,7 @@ impl<'a, T: ?Sized> EventListenerFuture for LockInner<'a, T> {
 
     #[inline]
     fn poll_with_strategy<'x, S: event_listener_strategy::Strategy<'x>>(
-        self: Pin<&'x mut Self>,
+        self: Pin<&mut Self>,
         strategy: &mut S,
         context: &mut S::Context,
     ) -> Poll<Self::Output> {
@@ -350,7 +405,7 @@ impl<T: ?Sized> EventListenerFuture for LockArcInnards<T> {
     type Output = MutexGuardArc<T>;
 
     fn poll_with_strategy<'a, S: event_listener_strategy::Strategy<'a>>(
-        mut self: Pin<&'a mut Self>,
+        mut self: Pin<&mut Self>,
         strategy: &mut S,
         context: &mut S::Context,
     ) -> Poll<Self::Output> {
@@ -459,7 +514,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
 
     #[cold]
     fn poll_with_strategy<'a, S: event_listener_strategy::Strategy<'a>>(
-        mut self: Pin<&'a mut Self>,
+        mut self: Pin<&mut Self>,
         strategy: &mut S,
         context: &mut S::Context,
     ) -> Poll<Self::Output> {

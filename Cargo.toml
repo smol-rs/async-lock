@@ -31,3 +31,6 @@ waker-fn = "1.1.0"
 
 [target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
 wasm-bindgen-test = "0.3"
+
+[patch.crates-io]
+event-listener-strategy = { git = "https://github.com/smol-rs/event-listener-strategy", branch = "notgull/no-lt" }

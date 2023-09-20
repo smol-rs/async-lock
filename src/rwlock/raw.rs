@@ -6,13 +6,13 @@
 //! the locking code only once, and also lets us make
 //! [`RwLockReadGuard`](super::RwLockReadGuard) covariant in `T`.
 
-use core::future::Future;
 use core::mem::forget;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::task::{Context, Poll};
+use core::task::Poll;
 
 use event_listener::{Event, EventListener};
+use event_listener_strategy::{EventListenerFuture, Strategy};
 
 use crate::futures::Lock;
 use crate::Mutex;
@@ -53,7 +53,6 @@ impl RawRwLock {
     }
 
     /// Returns `true` iff a read lock was successfully acquired.
-
     pub(super) fn try_read(&self) -> bool {
         let mut state = self.state.load(Ordering::Acquire);
 
@@ -298,10 +297,14 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> Future for RawRead<'a> {
+impl<'a> EventListenerFuture for RawRead<'a> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<()> {
         let mut this = self.project();
 
         loop {
@@ -331,7 +334,7 @@ impl<'a> Future for RawRead<'a> {
                     Ordering::SeqCst
                 } else {
                     // Wait for the writer to finish.
-                    ready!(this.listener.as_mut().poll(cx));
+                    ready!(strategy.poll(this.listener.as_mut(), cx));
 
                     // Notify the next reader waiting in list.
                     this.lock.no_writer.notify(1);
@@ -349,7 +352,6 @@ impl<'a> Future for RawRead<'a> {
 
 pin_project_lite::pin_project! {
     /// The future returned by [`RawRwLock::upgradable_read`].
-
     pub(super) struct RawUpgradableRead<'a> {
         // The lock that is being acquired.
         pub(super) lock: &'a RawRwLock,
@@ -360,14 +362,18 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> Future for RawUpgradableRead<'a> {
+impl<'a> EventListenerFuture for RawUpgradableRead<'a> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<()> {
         let this = self.project();
 
         // Acquire the mutex.
-        let mutex_guard = ready!(this.acquire.poll(cx));
+        let mutex_guard = ready!(this.acquire.poll_with_strategy(strategy, cx));
         forget(mutex_guard);
 
         // Load the current state.
@@ -427,6 +433,7 @@ pin_project_lite::pin_project! {
 
 pin_project_lite::pin_project! {
     #[project = WriteStateProj]
+    #[project_replace = WriteStateProjReplace]
     enum WriteState<'a> {
         // We are currently acquiring the inner mutex.
         Acquiring { #[pin] lock: Lock<'a, ()> },
@@ -439,17 +446,21 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> Future for RawWrite<'a> {
+impl<'a> EventListenerFuture for RawWrite<'a> {
     type Output = ();
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<()> {
         let mut this = self.project();
 
         loop {
             match this.state.as_mut().project() {
                 WriteStateProj::Acquiring { lock } => {
                     // First grab the mutex.
-                    let mutex_guard = ready!(lock.poll(cx));
+                    let mutex_guard = ready!(lock.poll_with_strategy(strategy, cx));
                     forget(mutex_guard);
 
                     // Set `WRITER_BIT` and create a guard that unsets it in case this future is canceled.
@@ -486,7 +497,7 @@ impl<'a> Future for RawWrite<'a> {
                         this.no_readers.as_mut().listen();
                     } else {
                         // Wait for the readers to finish.
-                        ready!(this.no_readers.as_mut().poll(cx));
+                        ready!(strategy.poll(this.no_readers.as_mut(), cx));
                     };
                 }
                 WriteStateProj::Acquired => panic!("Write lock already acquired"),
@@ -520,10 +531,14 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> Future for RawUpgrade<'a> {
+impl<'a> EventListenerFuture for RawUpgrade<'a> {
     type Output = &'a RawRwLock;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<&'a RawRwLock> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<&'a RawRwLock> {
         let mut this = self.project();
         let lock = this.lock.expect("cannot poll future after completion");
 
@@ -547,7 +562,7 @@ impl<'a> Future for RawUpgrade<'a> {
                 this.listener.as_mut().listen();
             } else {
                 // Wait for the readers to finish.
-                ready!(this.listener.as_mut().poll(cx));
+                ready!(strategy.poll(this.listener.as_mut(), cx));
             };
         }
 
