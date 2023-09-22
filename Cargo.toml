@@ -16,7 +16,7 @@ exclude = ["/.*"]
 
 [dependencies]
 event-listener = { version = "3.0.0", default-features = false }
-event-listener-strategy = { version = "0.2.0", default-features = false }
+event-listener-strategy = { version = "0.3.0", default-features = false }
 pin-project-lite = "0.2.11"
 
 [features]
@@ -31,6 +31,3 @@ waker-fn = "1.1.0"
 
 [target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
 wasm-bindgen-test = "0.3"
-
-[patch.crates-io]
-event-listener-strategy = { git = "https://github.com/smol-rs/event-listener-strategy", branch = "notgull/no-lt" }

@@ -134,6 +134,7 @@ impl<T: ?Sized> Mutex<T> {
     /// let guard = mutex.lock_blocking();
     /// assert_eq!(*guard, 10);
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     #[inline]
     pub fn lock_blocking(&self) -> MutexGuard<'_, T> {
         self.lock().wait()
@@ -249,6 +250,7 @@ impl<T: ?Sized> Mutex<T> {
     /// let guard = mutex.lock_arc_blocking();
     /// assert_eq!(*guard, 10);
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     #[inline]
     pub fn lock_arc_blocking(self: &Arc<Self>) -> MutexGuardArc<T> {
         self.lock_arc().wait()

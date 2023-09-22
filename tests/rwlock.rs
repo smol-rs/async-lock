@@ -47,6 +47,7 @@ fn smoke() {
     });
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 #[test]
 fn smoke_blocking() {
     let lock = RwLock::new(());

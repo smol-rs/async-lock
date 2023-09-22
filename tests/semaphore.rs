@@ -114,6 +114,7 @@ fn yields_when_contended() {
     check_yields_when_contended(s.try_acquire_arc().unwrap(), s.acquire_arc());
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 #[test]
 fn smoke_blocking() {
     let s = Semaphore::new(2);

@@ -235,6 +235,8 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// assert!(lock.try_read().is_some());
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
     pub fn read_blocking(&self) -> RwLockReadGuard<'_, T> {
         self.read().wait()
     }
@@ -339,6 +341,8 @@ impl<T: ?Sized> RwLock<T> {
     /// let mut writer = RwLockUpgradableReadGuard::upgrade_blocking(reader);
     /// *writer = 2;
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
     pub fn upgradable_read_blocking(&self) -> RwLockUpgradableReadGuard<'_, T> {
         self.upgradable_read().wait()
     }
@@ -485,6 +489,8 @@ impl<T: ?Sized> RwLock<T> {
     /// let writer = lock.write_blocking();
     /// assert!(lock.try_read().is_none());
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
     pub fn write_blocking(&self) -> RwLockWriteGuard<'_, T> {
         self.write().wait()
     }
@@ -870,6 +876,8 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     /// let mut writer = RwLockUpgradableReadGuard::upgrade_blocking(reader);
     /// *writer = 2;
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
     pub fn upgrade_blocking(guard: Self) -> RwLockWriteGuard<'a, T> {
         RwLockUpgradableReadGuard::upgrade(guard).wait()
     }

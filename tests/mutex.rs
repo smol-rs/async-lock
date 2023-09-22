@@ -24,6 +24,7 @@ fn smoke() {
     })
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
 #[test]
 fn smoke_blocking() {
     let m = Mutex::new(());

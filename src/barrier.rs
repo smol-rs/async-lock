@@ -124,6 +124,7 @@ impl Barrier {
     ///     });
     /// }
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn wait_blocking(&self) -> BarrierWaitResult {
         self.wait().wait()
     }

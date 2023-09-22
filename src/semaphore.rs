@@ -113,6 +113,8 @@ impl Semaphore {
     /// let s = Semaphore::new(2);
     /// let guard = s.acquire_blocking();
     /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
     pub fn acquire_blocking(&self) -> SemaphoreGuard<'_> {
         self.acquire().wait()
     }
