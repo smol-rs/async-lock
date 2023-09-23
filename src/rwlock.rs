@@ -221,7 +221,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
-    /// Calling this method in an `async` function or block may result in a deadlock.
+    /// Calling this method in an asynchronous context may result in a deadlock.
     ///
     /// # Examples
     ///
@@ -325,7 +325,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
-    /// Calling this method in an `async` function or block may result in a deadlock.
+    /// Calling this method in an asynchronous context may result in a deadlock.
     ///
     /// # Examples
     ///
@@ -477,7 +477,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
-    /// Calling this method in an `async` function or block may result in a deadlock.
+    /// Calling this method in an asynchronous context may result in a deadlock.
     ///
     /// # Examples
     ///
