@@ -6,6 +6,26 @@
 //! * [`Mutex`] - a mutual exclusion lock.
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
+//!
+//! ## Relationship with `std::sync`
+//!
+//! In general, you should prefer to use [`std::sync`] types over types from this crate.
+//!
+//! There are two primary use cases for types from this crate:
+//!
+//! - You need to use a synchronization primitive in a `no_std` environment.
+//! - You need to hold a lock across an `.await` point.
+//!
+//! If you already use `libstd` and you aren't holding locks across await points, you should use
+//! [`std::sync`] instead of this crate. These types are optimized for operating system use cases,
+//! are less complex and are generally much faster. In contrast, `async-lock` will actually just
+//! use `std::sync::Mutex` under the hood if the `std` feature is enabled, and will fall back to a
+//! significantly slower strategy if it is not. So, there are no cases where `async-lock` is a
+//! win for performance over [`std::sync`].
+//!
+//! In short, you should prefer using [`std::sync`] over any of the types in this module.
+//!
+//! [`std::sync`]: https://doc.rust-lang.org/std/sync/index.html
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
