@@ -219,7 +219,7 @@ impl<T: ?Sized> RwLock<T> {
     /// Rather than using asynchronous waiting, like the [`read`] method, this method will
     /// block the current thread until the read lock is acquired.
     ///
-    /// This method should not be used in a synchronous context. It is intended to be
+    /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
     /// Calling this method in an `async` function or block may result in a deadlock.
     ///
@@ -323,7 +323,7 @@ impl<T: ?Sized> RwLock<T> {
     /// Rather than using asynchronous waiting, like the [`upgradable_read`] method, this method will
     /// block the current thread until the read lock is acquired.
     ///
-    /// This method should not be used in a synchronous context. It is intended to be
+    /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
     /// Calling this method in an `async` function or block may result in a deadlock.
     ///
@@ -475,7 +475,7 @@ impl<T: ?Sized> RwLock<T> {
     /// Rather than using asynchronous waiting, like the [`write`] method, this method will
     /// block the current thread until the write lock is acquired.
     ///
-    /// This method should not be used in a synchronous context. It is intended to be
+    /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
     /// Calling this method in an `async` function or block may result in a deadlock.
     ///

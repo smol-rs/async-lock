@@ -99,7 +99,7 @@ impl Barrier {
     /// Rather than using asynchronous waiting, like the [`wait`] method, this method will
     /// block the current thread until the wait is complete.
     ///
-    /// This method should not be used in a synchronous context. It is intended to be
+    /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a barrier can be used in both asynchronous and synchronous contexts.
     /// Calling this method in an `async` function or block may result in a deadlock.
     ///
