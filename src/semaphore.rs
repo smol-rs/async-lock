@@ -7,6 +7,7 @@ use core::task::{Context, Poll};
 use alloc::sync::Arc;
 
 use event_listener::{Event, EventListener};
+use event_listener_strategy::{easy_wrapper, EventListenerFuture, Strategy};
 
 /// A counter for limiting the number of concurrent operations.
 #[derive(Debug)]
@@ -85,10 +86,37 @@ impl Semaphore {
     /// # });
     /// ```
     pub fn acquire(&self) -> Acquire<'_> {
-        Acquire {
+        Acquire::_new(AcquireInner {
             semaphore: self,
             listener: EventListener::new(&self.event),
-        }
+        })
+    }
+
+    /// Waits for a permit for a concurrent operation.
+    ///
+    /// Returns a guard that releases the permit when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`acquire`] method, this method will
+    /// block the current thread until the permit is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a semaphore can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an asynchronous context may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Semaphore::new(2);
+    /// let guard = s.acquire_blocking();
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn acquire_blocking(&self) -> SemaphoreGuard<'_> {
+        self.acquire().wait()
     }
 
     /// Attempts to get an owned permit for a concurrent operation.
@@ -177,9 +205,15 @@ impl Semaphore {
     }
 }
 
-pin_project_lite::pin_project! {
+easy_wrapper! {
     /// The future returned by [`Semaphore::acquire`].
-    pub struct Acquire<'a> {
+    pub struct Acquire<'a>(AcquireInner<'a> => SemaphoreGuard<'a>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
+pin_project_lite::pin_project! {
+    struct AcquireInner<'a> {
         // The semaphore being acquired.
         semaphore: &'a Semaphore,
 
@@ -189,16 +223,20 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl fmt::Debug for Acquire<'_> {
+impl fmt::Debug for AcquireInner<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Acquire { .. }")
     }
 }
 
-impl<'a> Future for Acquire<'a> {
+impl<'a> EventListenerFuture for AcquireInner<'a> {
     type Output = SemaphoreGuard<'a>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
 
         loop {
@@ -209,7 +247,7 @@ impl<'a> Future for Acquire<'a> {
                     if !this.listener.is_listening() {
                         this.listener.as_mut().listen();
                     } else {
-                        ready!(this.listener.as_mut().poll(cx));
+                        ready!(strategy.poll(this.listener.as_mut(), cx));
                     }
                 }
             }

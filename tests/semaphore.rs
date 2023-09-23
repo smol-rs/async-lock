@@ -114,6 +114,17 @@ fn yields_when_contended() {
     check_yields_when_contended(s.try_acquire_arc().unwrap(), s.acquire_arc());
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+#[test]
+fn smoke_blocking() {
+    let s = Semaphore::new(2);
+    let g1 = s.acquire_blocking();
+    let _g2 = s.acquire_blocking();
+    assert!(s.try_acquire().is_none());
+    drop(g1);
+    assert!(s.try_acquire().is_some());
+}
+
 #[test]
 fn add_permits() {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);

@@ -1,8 +1,7 @@
 use core::fmt;
-use core::future::Future;
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
-use core::task::{Context, Poll};
+use core::task::Poll;
 
 use alloc::sync::Arc;
 
@@ -12,9 +11,18 @@ use super::{
     RwLockUpgradableReadGuardArc, RwLockWriteGuard, RwLockWriteGuardArc,
 };
 
+use event_listener_strategy::{easy_wrapper, EventListenerFuture, Strategy};
+
+easy_wrapper! {
+    /// The future returned by [`RwLock::read`].
+    pub struct Read<'a, T: ?Sized>(ReadInner<'a, T> => RwLockReadGuard<'a, T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::read`].
-    pub struct Read<'a, T: ?Sized> {
+    struct ReadInner<'a, T: ?Sized> {
         // Raw read lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawRead<'a>,
@@ -24,8 +32,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Sync + ?Sized> Send for Read<'_, T> {}
-unsafe impl<T: Sync + ?Sized> Sync for Read<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Send for ReadInner<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for ReadInner<'_, T> {}
+
+impl<'x, T: ?Sized> Read<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawRead<'x>, value: *const T) -> Self {
+        Self::_new(ReadInner { raw, value })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for Read<'_, T> {
     #[inline]
@@ -34,13 +49,17 @@ impl<T: ?Sized> fmt::Debug for Read<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for Read<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for ReadInner<'a, T> {
     type Output = RwLockReadGuard<'a, T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         Poll::Ready(RwLockReadGuard {
             lock: this.raw.lock,
@@ -49,9 +68,16 @@ impl<'a, T: ?Sized> Future for Read<'a, T> {
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLock::read_arc`].
+    pub struct ReadArc<'a, T>(ReadArcInner<'a, T> => RwLockReadGuardArc<T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::read_arc`].
-    pub struct ReadArc<'a, T> {
+    struct ReadArcInner<'a, T> {
         // Raw read lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawRead<'a>,
@@ -61,8 +87,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + Sync> Send for ReadArc<'_, T> {}
-unsafe impl<T: Send + Sync> Sync for ReadArc<'_, T> {}
+unsafe impl<T: Send + Sync> Send for ReadArcInner<'_, T> {}
+unsafe impl<T: Send + Sync> Sync for ReadArcInner<'_, T> {}
+
+impl<'x, T> ReadArc<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawRead<'x>, lock: &'x Arc<RwLock<T>>) -> Self {
+        Self::_new(ReadArcInner { raw, lock })
+    }
+}
 
 impl<T> fmt::Debug for ReadArc<'_, T> {
     #[inline]
@@ -71,22 +104,35 @@ impl<T> fmt::Debug for ReadArc<'_, T> {
     }
 }
 
-impl<'a, T> Future for ReadArc<'a, T> {
+impl<'a, T> EventListenerFuture for ReadArcInner<'a, T> {
     type Output = RwLockReadGuardArc<T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         // SAFETY: we just acquired a read lock
         Poll::Ready(unsafe { RwLockReadGuardArc::from_arc(this.lock.clone()) })
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLock::upgradable_read`].
+    pub struct UpgradableRead<'a, T: ?Sized>(
+        UpgradableReadInner<'a, T> => RwLockUpgradableReadGuard<'a, T>
+    );
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::upgradable_read`].
-    pub struct UpgradableRead<'a, T: ?Sized> {
+    struct UpgradableReadInner<'a, T: ?Sized> {
         // Raw upgradable read lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawUpgradableRead<'a>,
@@ -97,8 +143,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for UpgradableRead<'_, T> {}
-unsafe impl<T: Sync + ?Sized> Sync for UpgradableRead<'_, T> {}
+unsafe impl<T: Send + Sync + ?Sized> Send for UpgradableReadInner<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for UpgradableReadInner<'_, T> {}
+
+impl<'x, T: ?Sized> UpgradableRead<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawUpgradableRead<'x>, value: *mut T) -> Self {
+        Self::_new(UpgradableReadInner { raw, value })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for UpgradableRead<'_, T> {
     #[inline]
@@ -107,13 +160,17 @@ impl<T: ?Sized> fmt::Debug for UpgradableRead<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for UpgradableReadInner<'a, T> {
     type Output = RwLockUpgradableReadGuard<'a, T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         Poll::Ready(RwLockUpgradableReadGuard {
             lock: this.raw.lock,
@@ -122,9 +179,18 @@ impl<'a, T: ?Sized> Future for UpgradableRead<'a, T> {
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLock::upgradable_read_arc`].
+    pub struct UpgradableReadArc<'a, T: ?Sized>(
+        UpgradableReadArcInner<'a, T> => RwLockUpgradableReadGuardArc<T>
+    );
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::upgradable_read_arc`].
-    pub struct UpgradableReadArc<'a, T: ?Sized> {
+    struct UpgradableReadArcInner<'a, T: ?Sized> {
         // Raw upgradable read lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawUpgradableRead<'a>,
@@ -133,8 +199,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for UpgradableReadArc<'_, T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for UpgradableReadArc<'_, T> {}
+unsafe impl<T: Send + Sync + ?Sized> Send for UpgradableReadArcInner<'_, T> {}
+unsafe impl<T: Send + Sync + ?Sized> Sync for UpgradableReadArcInner<'_, T> {}
+
+impl<'x, T: ?Sized> UpgradableReadArc<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawUpgradableRead<'x>, lock: &'x Arc<RwLock<T>>) -> Self {
+        Self::_new(UpgradableReadArcInner { raw, lock })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for UpgradableReadArc<'_, T> {
     #[inline]
@@ -143,22 +216,33 @@ impl<T: ?Sized> fmt::Debug for UpgradableReadArc<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for UpgradableReadArc<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for UpgradableReadArcInner<'a, T> {
     type Output = RwLockUpgradableReadGuardArc<T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
         Poll::Ready(RwLockUpgradableReadGuardArc {
             lock: this.lock.clone(),
         })
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLock::write`].
+    pub struct Write<'a, T: ?Sized>(WriteInner<'a, T> => RwLockWriteGuard<'a, T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::write`].
-    pub struct Write<'a, T: ?Sized> {
+    struct WriteInner<'a, T: ?Sized> {
         // Raw write lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawWrite<'a>,
@@ -168,8 +252,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + ?Sized> Send for Write<'_, T> {}
-unsafe impl<T: Sync + ?Sized> Sync for Write<'_, T> {}
+unsafe impl<T: Send + ?Sized> Send for WriteInner<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for WriteInner<'_, T> {}
+
+impl<'x, T: ?Sized> Write<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawWrite<'x>, value: *mut T) -> Self {
+        Self::_new(WriteInner { raw, value })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for Write<'_, T> {
     #[inline]
@@ -178,13 +269,17 @@ impl<T: ?Sized> fmt::Debug for Write<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for Write<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for WriteInner<'a, T> {
     type Output = RwLockWriteGuard<'a, T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         Poll::Ready(RwLockWriteGuard {
             lock: this.raw.lock,
@@ -193,9 +288,16 @@ impl<'a, T: ?Sized> Future for Write<'a, T> {
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLock::write_arc`].
+    pub struct WriteArc<'a, T: ?Sized>(WriteArcInner<'a, T> => RwLockWriteGuardArc<T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLock::write_arc`].
-    pub struct WriteArc<'a, T: ?Sized> {
+    struct WriteArcInner<'a, T: ?Sized> {
         // Raw write lock acquisition future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawWrite<'a>,
@@ -204,8 +306,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + Sync + ?Sized> Send for WriteArc<'_, T> {}
-unsafe impl<T: Send + Sync + ?Sized> Sync for WriteArc<'_, T> {}
+unsafe impl<T: Send + Sync + ?Sized> Send for WriteArcInner<'_, T> {}
+unsafe impl<T: Send + Sync + ?Sized> Sync for WriteArcInner<'_, T> {}
+
+impl<'x, T: ?Sized> WriteArc<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawWrite<'x>, lock: &'x Arc<RwLock<T>>) -> Self {
+        Self::_new(WriteArcInner { raw, lock })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for WriteArc<'_, T> {
     #[inline]
@@ -214,13 +323,17 @@ impl<T: ?Sized> fmt::Debug for WriteArc<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for WriteArc<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for WriteArcInner<'a, T> {
     type Output = RwLockWriteGuardArc<T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        ready!(this.raw.as_mut().poll(cx));
+        ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         Poll::Ready(RwLockWriteGuardArc {
             lock: this.lock.clone(),
@@ -228,9 +341,16 @@ impl<'a, T: ?Sized> Future for WriteArc<'a, T> {
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLockUpgradableReadGuard::upgrade`].
+    pub struct Upgrade<'a, T: ?Sized>(UpgradeInner<'a, T> => RwLockWriteGuard<'a, T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLockUpgradableReadGuard::upgrade`].
-    pub struct Upgrade<'a, T: ?Sized> {
+    struct UpgradeInner<'a, T: ?Sized> {
         // Raw read lock upgrade future, doesn't depend on `T`.
         #[pin]
         pub(super) raw: RawUpgrade<'a>,
@@ -240,8 +360,15 @@ pin_project_lite::pin_project! {
     }
 }
 
-unsafe impl<T: Send + ?Sized> Send for Upgrade<'_, T> {}
-unsafe impl<T: Sync + ?Sized> Sync for Upgrade<'_, T> {}
+unsafe impl<T: Send + ?Sized> Send for UpgradeInner<'_, T> {}
+unsafe impl<T: Sync + ?Sized> Sync for UpgradeInner<'_, T> {}
+
+impl<'x, T: ?Sized> Upgrade<'x, T> {
+    #[inline]
+    pub(super) fn new(raw: RawUpgrade<'x>, value: *mut T) -> Self {
+        Self::_new(UpgradeInner { raw, value })
+    }
+}
 
 impl<T: ?Sized> fmt::Debug for Upgrade<'_, T> {
     #[inline]
@@ -250,13 +377,17 @@ impl<T: ?Sized> fmt::Debug for Upgrade<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
+impl<'a, T: ?Sized> EventListenerFuture for UpgradeInner<'a, T> {
     type Output = RwLockWriteGuard<'a, T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
-        let lock = ready!(this.raw.as_mut().poll(cx));
+        let lock = ready!(this.raw.as_mut().poll_with_strategy(strategy, cx));
 
         Poll::Ready(RwLockWriteGuard {
             lock,
@@ -265,9 +396,16 @@ impl<'a, T: ?Sized> Future for Upgrade<'a, T> {
     }
 }
 
+easy_wrapper! {
+    /// The future returned by [`RwLockUpgradableReadGuardArc::upgrade`].
+    pub struct UpgradeArc<T: ?Sized>(UpgradeArcInner<T> => RwLockWriteGuardArc<T>);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
 pin_project_lite::pin_project! {
     /// The future returned by [`RwLockUpgradableReadGuardArc::upgrade`].
-    pub struct UpgradeArc<T: ?Sized> {
+    struct UpgradeArcInner<T: ?Sized> {
         // Raw read lock upgrade future, doesn't depend on `T`.
         // `'static` is a lie, this field is actually referencing the
         // `Arc` data. But since this struct also stores said `Arc`, we know
@@ -285,7 +423,7 @@ pin_project_lite::pin_project! {
         pub(super) lock: ManuallyDrop<Arc<RwLock<T>>>,
     }
 
-    impl<T: ?Sized> PinnedDrop for UpgradeArc<T> {
+    impl<T: ?Sized> PinnedDrop for UpgradeArcInner<T> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
             if !this.raw.is_ready() {
@@ -302,6 +440,16 @@ pin_project_lite::pin_project! {
     }
 }
 
+impl<T: ?Sized> UpgradeArc<T> {
+    #[inline]
+    pub(super) unsafe fn new(
+        raw: ManuallyDrop<RawUpgrade<'static>>,
+        lock: ManuallyDrop<Arc<RwLock<T>>>,
+    ) -> Self {
+        Self::_new(UpgradeArcInner { raw, lock })
+    }
+}
+
 impl<T: ?Sized> fmt::Debug for UpgradeArc<T> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -309,15 +457,20 @@ impl<T: ?Sized> fmt::Debug for UpgradeArc<T> {
     }
 }
 
-impl<T: ?Sized> Future for UpgradeArc<T> {
+impl<T: ?Sized> EventListenerFuture for UpgradeArcInner<T> {
     type Output = RwLockWriteGuardArc<T>;
 
     #[inline]
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let this = self.project();
         unsafe {
             // SAFETY: Practically, this is a pin projection.
-            ready!(Pin::new_unchecked(&mut **this.raw.get_unchecked_mut()).poll(cx));
+            ready!(Pin::new_unchecked(&mut **this.raw.get_unchecked_mut())
+                .poll_with_strategy(strategy, cx));
         }
 
         Poll::Ready(RwLockWriteGuardArc {

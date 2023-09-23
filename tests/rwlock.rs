@@ -47,6 +47,16 @@ fn smoke() {
     });
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+#[test]
+fn smoke_blocking() {
+    let lock = RwLock::new(());
+    drop(lock.read_blocking());
+    drop(lock.write_blocking());
+    drop((lock.read_blocking(), lock.read_blocking()));
+    drop(lock.write_blocking());
+}
+
 #[test]
 fn try_write() {
     future::block_on(async {
