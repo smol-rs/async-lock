@@ -18,9 +18,9 @@
 //!
 //! If you already use `libstd` and you aren't holding locks across await points, you should use
 //! [`std::sync`] instead of this crate. These types are optimized for operating system use cases,
-//! are less complex and are generally much faster. In contrast, `async-lock` will actually just
-//! use `std::sync::Mutex` under the hood if the `std` feature is enabled, and will fall back to a
-//! significantly slower strategy if it is not. So, there are no cases where `async-lock` is a
+//! are less complex and are generally much faster. In contrast, `async-lock`'s notification system
+//! uses `std::sync::Mutex` under the hood if the `std` feature is enabled, and will fall back to a
+//! significantly slower strategy if it is not. So, there are few cases where `async-lock` is a
 //! win for performance over [`std::sync`].
 //!
 //! In short, you should prefer using [`std::sync`] over any of the types in this module.
