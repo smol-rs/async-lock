@@ -1,3 +1,9 @@
+# Version 3.0.0
+
+- **Breaking:** Add an enabled-by-default `std` feature that allows using this crate without the standard library. (#43)
+- Support blocking and non-blocking operations on the same locks. (#56)
+- Switch to a more efficient event notification mechanism. (#43)
+
 # Version 2.8.0
 
 - Fix a bug where the `SemaphoreGuard::acquire_arc` future would busy wait under certain conditions (#42).
