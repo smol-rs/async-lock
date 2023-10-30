@@ -24,7 +24,7 @@ default = ["std"]
 std = ["event-listener/std", "event-listener-strategy/std"]
 
 [dev-dependencies]
-async-channel = "1.5.0"
+async-channel = "2.0.0"
 fastrand = "2.0.0"
 futures-lite = "1.12.0"
 waker-fn = "1.1.0"
