@@ -763,6 +763,14 @@ impl<T> Drop for OnceCell<T> {
     }
 }
 
+impl<T> Default for OnceCell<T> {
+    // Calls `OnceCell::new`.
+    #[inline]
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Either return the result of a future now, or panic.
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 fn now_or_never<T>(f: impl Future<Output = T>) -> T {
