@@ -16,8 +16,8 @@
 //! - You need to use a synchronization primitive in a `no_std` environment.
 //! - You need to hold a lock across an `.await` point.
 //!
-//! If you already use `libstd` and you aren't holding locks across await points, you should use
-//! [`std::sync`] instead of this crate. These types are optimized for operating system use cases,
+//! If you already use `libstd` and you aren't holding locks across await points, you should consider
+//! [`std::sync`] instead of this crate. Those types are optimized for operating system use cases,
 //! are less complex and are generally much faster. In contrast, `async-lock`'s notification system
 //! uses `std::sync::Mutex` under the hood if the `std` feature is enabled, and will fall back to a
 //! significantly slower strategy if it is not. So, there are few cases where `async-lock` is a
