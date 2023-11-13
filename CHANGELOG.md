@@ -1,3 +1,7 @@
+# Version 3.1.0
+
+- Add a `Default` implementation for `OnceCell` (#63).
+
 # Version 3.0.0
 
 - **Breaking:** Add an enabled-by-default `std` feature that allows using this crate without the standard library. (#43)
