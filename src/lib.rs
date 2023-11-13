@@ -22,10 +22,16 @@
 //! uses `std::sync::Mutex` under the hood if the `std` feature is enabled, and will fall back to a
 //! significantly slower strategy if it is not. So, there are few cases where `async-lock` is a
 //! win for performance over [`std::sync`].
+//! 
+//! When using [`std::sync`], you should be careful to not hold any locks over an `.await` point.
+//! In modern Rust, there is a Clippy lint called [`await_holding_lock`] that emits warnings for this
+//! scenario for [`std::sync`] and some other synchronization crates. Still, when deciding to use 
+//! [`std::sync`] over `async-lock`, you must be careful to not hold any locks past an `.await` point.
 //!
 //! In short, you should prefer using [`std::sync`] over any of the types in this module.
 //!
 //! [`std::sync`]: https://doc.rust-lang.org/std/sync/index.html
+//! [`await_holding_lock`]: https://rust-lang.github.io/rust-clippy/stable/index.html#/await_holding_lock
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
