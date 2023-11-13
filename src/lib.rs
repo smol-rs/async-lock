@@ -9,7 +9,7 @@
 //!
 //! ## Relationship with `std::sync`
 //!
-//! In general, you should prefer to use [`std::sync`] types over types from this crate.
+//! In general, you should consider using [`std::sync`] types over types from this crate.
 //!
 //! There are two primary use cases for types from this crate:
 //!
