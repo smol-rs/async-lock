@@ -15,6 +15,8 @@
 //!
 //! - You need to use a synchronization primitive in a `no_std` environment.
 //! - You need to hold a lock across an `.await` point.
+//!   (Holding an [`std::sync`] lock guard across an `.await` will make your future non-`Send`,
+//!   and is also highly likely to cause deadlocks.)
 //!
 //! If you already use `libstd` and you aren't holding locks across await points, you should consider
 //! [`std::sync`] instead of this crate. Those types are optimized for operating system use cases,
