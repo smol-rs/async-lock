@@ -20,8 +20,8 @@
 //!
 //! If you already use `libstd` and you aren't holding locks across await points (there is a
 //! Clippy lint called [`await_holding_lock`] that emits warnings for this scenario), you should
-//! consider [`std::sync`] instead of this crate. Those types are optimized for operating system
-//! use cases, are less complex and are generally much faster.
+//! consider [`std::sync`] instead of this crate. Those types are optimized for the currently
+//! running operating system, are less complex and are generally much faster.
 //!
 //! In contrast, `async-lock`'s notification system uses `std::sync::Mutex` under the hood if
 //! the `std` feature is enabled, and will fall back to a significantly slower strategy if it is
