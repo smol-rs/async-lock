@@ -6,6 +6,29 @@
 //! * [`Mutex`] - a mutual exclusion lock.
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
+//!
+//! ## Relationship with `std::sync`
+//!
+//! In general, you should consider using [`std::sync`] types over types from this crate.
+//!
+//! There are two primary use cases for types from this crate:
+//!
+//! - You need to use a synchronization primitive in a `no_std` environment.
+//! - You need to hold a lock across an `.await` point.
+//!   (Holding an [`std::sync`] lock guard across an `.await` will make your future non-`Send`,
+//!   and is also highly likely to cause deadlocks.)
+//!
+//! If you already use `libstd` and you aren't holding locks across await points (there is a
+//! Clippy lint called [`await_holding_lock`] that emits warnings for this scenario), you should
+//! consider [`std::sync`] instead of this crate. Those types are optimized for the currently
+//! running operating system, are less complex and are generally much faster.
+//!
+//! In contrast, `async-lock`'s notification system uses `std::sync::Mutex` under the hood if
+//! the `std` feature is enabled, and will fall back to a significantly slower strategy if it is
+//! not. So, there are few cases where `async-lock` is a win for performance over [`std::sync`].
+//!
+//! [`std::sync`]: https://doc.rust-lang.org/std/sync/index.html
+//! [`await_holding_lock`]: https://rust-lang.github.io/rust-clippy/stable/index.html#/await_holding_lock
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
