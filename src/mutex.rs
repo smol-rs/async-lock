@@ -118,8 +118,8 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`lock`] method, this method will
-    /// block the current thread until the lock is acquired.
+    /// Rather than using asynchronous waiting, like the [`lock`][Mutex::lock] method,
+    /// this method will block the current thread until the lock is acquired.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.
@@ -233,8 +233,8 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`lock_arc`] method, this method will
-    /// block the current thread until the lock is acquired.
+    /// Rather than using asynchronous waiting, like the [`lock_arc`][Mutex::lock_arc] method,
+    /// this method will block the current thread until the lock is acquired.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a mutex can be used in both asynchronous and synchronous contexts.

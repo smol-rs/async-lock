@@ -96,8 +96,8 @@ impl Barrier {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`wait`] method, this method will
-    /// block the current thread until the wait is complete.
+    /// Rather than using asynchronous waiting, like the [`wait`][`Barrier::wait`] method,
+    /// this method will block the current thread until the wait is complete.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a barrier can be used in both asynchronous and synchronous contexts.
