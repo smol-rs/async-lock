@@ -795,6 +795,9 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     ///
     /// This function can only fail if there are other active read locks.
     ///
+    /// If you only have a mutable reference to the guard, consider
+    /// [`try_with_upgraded`][RwLockUpgradableReadGuard::try_with_upgraded] instead.
+    ///
     /// # Examples
     ///
     /// ```
@@ -829,6 +832,61 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
         }
     }
 
+    /// Attempts to upgrade into a write lock. If successful,
+    /// calls the passed-in `[FnOnce]` with the lock contents,
+    /// downgrades back to an upgradable read lock,
+    /// and returns the result of the closure (wrapped in `Some`).
+    /// If the upgrade was not successful, `None` is returned.
+    ///
+    /// Unlike [`try_upgrade`][RwLockUpgradableReadGuard::try_upgrade],
+    /// this function only requires a mutable reference to the guard.
+    ///
+    /// This function can only fail if there are other active read locks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # futures_lite::future::block_on(async {
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let mut reader = lock.upgradable_read().await;
+    /// assert_eq!(*reader, 1);
+    ///
+    /// let reader2 = lock.read().await;
+    /// let closure = |x: &mut i32| { *x += 1; *x };
+    /// assert_eq!(RwLockUpgradableReadGuard::try_with_upgraded(&mut reader, closure), None);
+    ///
+    /// drop(reader2);
+    /// assert_eq!(RwLockUpgradableReadGuard::try_with_upgraded(&mut reader, closure), Some(2));
+    /// # })
+    /// ```
+    pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(guard: &mut Self, f: F) -> Option<Ret> {
+        // If there are no readers, grab the write lock.
+        // SAFETY: `guard` is an upgradable read guard
+        if unsafe { guard.lock.try_upgrade() } {
+            // We need to ensure that the lock is downgraded even if the closure panics.
+            struct DowngradeOnDrop<'a>(&'a RawRwLock);
+            impl Drop for DowngradeOnDrop<'_> {
+                #[inline]
+                fn drop(&mut self) {
+                    // SAFETY: we hold a write lock
+                    unsafe {
+                        self.0.downgrade_to_upgradable();
+                    }
+                }
+            }
+
+            let _drop_guard: DowngradeOnDrop<'_> = DowngradeOnDrop(guard.lock);
+
+            // SAFETY: we hold a write lock
+            Some(f(unsafe { &mut *guard.value }))
+        } else {
+            None
+        }
+    }
+
     /// Upgrades into a write lock.
     ///
     /// # Examples
@@ -859,6 +917,9 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
 
     /// Upgrades into a write lock.
     ///
+    /// If you only have a mutable reference to the guard, consider
+    /// [`with_upgraded_blocking`][RwLockUpgradableReadGuard::with_upgraded_blocking] instead.
+    ///
     /// # Blocking
     ///
     /// This function will block the current thread until it is able to acquire the write lock.
@@ -880,6 +941,61 @@ impl<'a, T: ?Sized> RwLockUpgradableReadGuard<'a, T> {
     #[inline]
     pub fn upgrade_blocking(guard: Self) -> RwLockWriteGuard<'a, T> {
         RwLockUpgradableReadGuard::upgrade(guard).wait()
+    }
+
+    /// Upgrades into a write lock,
+    /// calls the passed-in `[FnOnce]` with the lock contents,
+    /// downgrades back to an upgradable read lock,
+    /// and returns the result of the closure.
+    ///
+    /// Unlike [`upgrade_blocking`][RwLockUpgradableReadGuard::upgrade_blocking],
+    /// this function only requires a mutable reference to the guard.
+    ///
+    /// # Blocking
+    ///
+    /// This function will block the current thread until it is able to acquire the write lock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # futures_lite::future::block_on(async {
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuard};
+    ///
+    /// let lock = RwLock::new(1);
+    ///
+    /// let mut reader = lock.upgradable_read().await;
+    /// assert_eq!(*reader, 1);
+    /// let closure = |x: &mut i32| { *x += 1; *x };
+    ///
+    /// assert_eq!(RwLockUpgradableReadGuard::with_upgraded_blocking(&mut reader, closure), 2);
+    /// # })
+    /// ````
+
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn with_upgraded_blocking<Ret, F: FnOnce(&mut T) -> Ret>(guard: &mut Self, f: F) -> Ret {
+        use event_listener_strategy::EventListenerFuture;
+
+        // We need to ensure that the lock is downgraded even if the closure panics.
+        struct DowngradeOnDrop<'a>(&'a RawRwLock);
+        impl Drop for DowngradeOnDrop<'_> {
+            #[inline]
+            fn drop(&mut self) {
+                // SAFETY: we hold a write lock
+                unsafe {
+                    self.0.downgrade_to_upgradable();
+                }
+            }
+        }
+
+        // SAFETY: we hold an upgradable read guard
+        unsafe {
+            guard.lock.upgrade().wait();
+        }
+
+        let _drop_guard: DowngradeOnDrop<'_> = DowngradeOnDrop(guard.lock);
+
+        f(unsafe { &mut *guard.value })
     }
 }
 
@@ -999,6 +1115,9 @@ impl<T: ?Sized> RwLockUpgradableReadGuardArc<T> {
     ///
     /// This function can only fail if there are other active read locks.
     ///
+    /// If you only have a mutable reference to the guard, consider
+    /// [`try_with_upgraded`][RwLockUpgradableReadGuardArc::try_with_upgraded] instead.
+    ///
     /// # Examples
     ///
     /// ```
@@ -1027,6 +1146,62 @@ impl<T: ?Sized> RwLockUpgradableReadGuardArc<T> {
             })
         } else {
             Err(guard)
+        }
+    }
+
+    /// Attempts to upgrade into a write lock. If successful,
+    /// calls the passed-in `[FnOnce]` with the lock contents,
+    /// downgrades back to an upgradable read lock,
+    /// and returns the result of the closure (wrapped in `Some`).
+    /// If the upgrade was not successful, `None` is returned.
+    ///
+    /// Unlike [`try_upgrade`][RwLockUpgradableReadGuardArc::try_upgrade],
+    /// this function only requires a mutable reference to the guard.
+    ///
+    /// This function can only fail if there are other active read locks.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # futures_lite::future::block_on(async {
+    /// use std::sync::Arc;
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
+    ///
+    /// let lock = Arc::new(RwLock::new(1));
+    ///
+    /// let mut reader = lock.upgradable_read_arc().await;
+    /// assert_eq!(*reader, 1);
+    ///
+    /// let reader2 = lock.read().await;
+    /// let closure = |x: &mut i32| { *x += 1; *x };
+    /// assert_eq!(RwLockUpgradableReadGuardArc::try_with_upgraded(&mut reader, closure), None);
+    ///
+    /// drop(reader2);
+    /// assert_eq!(RwLockUpgradableReadGuardArc::try_with_upgraded(&mut reader, closure), Some(2));
+    /// # })
+    /// ```
+    pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(guard: &mut Self, f: F) -> Option<Ret> {
+        // If there are no readers, grab the write lock.
+        // SAFETY: `guard` is an upgradable read guard
+        if unsafe { guard.lock.raw.try_upgrade() } {
+            // We need to ensure that the lock is downgraded even if the closure panics.
+            struct DowngradeOnDrop<'a>(&'a RawRwLock);
+            impl Drop for DowngradeOnDrop<'_> {
+                #[inline]
+                fn drop(&mut self) {
+                    // SAFETY: we hold a write lock
+                    unsafe {
+                        self.0.downgrade_to_upgradable();
+                    }
+                }
+            }
+
+            let _drop_guard: DowngradeOnDrop<'_> = DowngradeOnDrop(&guard.lock.raw);
+
+            // SAFETY: we hold a write lock
+            Some(f(unsafe { &mut *guard.lock.value.get() }))
+        } else {
+            None
         }
     }
 
