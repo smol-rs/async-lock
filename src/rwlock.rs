@@ -216,8 +216,8 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`read`] method, this method will
-    /// block the current thread until the read lock is acquired.
+    /// Rather than using asynchronous waiting, like the [`read`][`RwLock::read`] method,
+    /// this method will block the current thread until the read lock is acquired.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
@@ -320,8 +320,8 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`upgradable_read`] method, this method will
-    /// block the current thread until the read lock is acquired.
+    /// Rather than using asynchronous waiting, like the [`upgradable_read`][`RwLock::upgradable_read`]
+    /// method, this method will block the current thread until the read lock is acquired.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a lock can be used in both asynchronous and synchronous contexts.

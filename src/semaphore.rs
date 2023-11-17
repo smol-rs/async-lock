@@ -98,8 +98,8 @@ impl Semaphore {
     ///
     /// # Blocking
     ///
-    /// Rather than using asynchronous waiting, like the [`acquire`] method, this method will
-    /// block the current thread until the permit is acquired.
+    /// Rather than using asynchronous waiting, like the [`acquire`][Semaphore::acquire] method,
+    /// this method will block the current thread until the permit is acquired.
     ///
     /// This method should not be used in an asynchronous context. It is intended to be
     /// used in a way that a semaphore can be used in both asynchronous and synchronous contexts.
