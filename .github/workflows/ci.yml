@@ -97,6 +97,14 @@ jobs:
           MIRIFLAGS: -Zmiri-strict-provenance -Zmiri-symbolic-alignment-check -Zmiri-disable-isolation -Zmiri-ignore-leaks
           RUSTFLAGS: ${{ env.RUSTFLAGS }} -Z randomize-layout
 
+  doc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup update stable
+      - run: cargo doc --all --all-features
+
   security_audit:
     permissions:
       checks: write
