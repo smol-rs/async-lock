@@ -1,3 +1,7 @@
+# Version 3.1.1
+
+- Add a note to the documentation comparing this crate against `libstd`'s locks. (#58)
+
 # Version 3.1.0
 
 - Add a `Default` implementation for `OnceCell` (#63).
