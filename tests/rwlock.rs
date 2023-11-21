@@ -117,7 +117,7 @@ fn contention() {
         let tx = tx.clone();
         let rw = rw.clone();
 
-        spawn(async move {
+        let _spawned = spawn(async move {
             for _ in 0..M {
                 if fastrand::u32(..N) == 0 {
                     drop(rw.write().await);
@@ -151,7 +151,7 @@ fn contention_arc() {
         let tx = tx.clone();
         let rw = rw.clone();
 
-        spawn(async move {
+        let _spawned = spawn(async move {
             for _ in 0..M {
                 if fastrand::u32(..N) == 0 {
                     drop(rw.write_arc().await);
@@ -177,7 +177,7 @@ fn writer_and_readers() {
     let (tx, rx) = async_channel::unbounded();
 
     // Spawn a writer task.
-    spawn({
+    let _spawned = spawn({
         let lock = lock.clone();
         async move {
             let mut lock = lock.write().await;
@@ -223,7 +223,7 @@ fn writer_and_readers_arc() {
     let (tx, rx) = async_channel::unbounded();
 
     // Spawn a writer task.
-    spawn({
+    let _spawned = spawn({
         let lock = lock.clone();
         async move {
             let mut lock = lock.write_arc().await;
