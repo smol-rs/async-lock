@@ -82,7 +82,7 @@ impl Barrier {
         BarrierWait::_new(BarrierWaitInner {
             barrier: self,
             lock: Some(self.state.lock()),
-            evl: EventListener::new(&self.event),
+            evl: EventListener::new(),
             state: WaitState::Initial,
         })
     }
@@ -200,7 +200,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
 
                     if state.count < this.barrier.n {
                         // We need to wait for the event.
-                        this.evl.as_mut().listen();
+                        this.evl.as_mut().listen(&this.barrier.event);
                         *this.state = WaitState::Waiting { local_gen };
                     } else {
                         // We are the last one.
@@ -233,7 +233,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
 
                     if *local_gen == state.generation_id && state.count < this.barrier.n {
                         // We need to wait for the event again.
-                        this.evl.as_mut().listen();
+                        this.evl.as_mut().listen(&this.barrier.event);
                         *this.state = WaitState::Waiting {
                             local_gen: *local_gen,
                         };
