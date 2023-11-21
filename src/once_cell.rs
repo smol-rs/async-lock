@@ -274,9 +274,9 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = EventListener::new(&self.passive_waiters);
+        let listener = EventListener::new();
         pin!(listener);
-        listener.as_mut().listen();
+        listener.as_mut().listen(&self.passive_waiters);
 
         // Try again.
         if let Some(value) = self.get() {
@@ -329,9 +329,9 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = EventListener::new(&self.passive_waiters);
+        let listener = EventListener::new();
         pin!(listener);
-        listener.as_mut().listen();
+        listener.as_mut().listen(&self.passive_waiters);
 
         // Try again.
         if let Some(value) = self.get() {
@@ -591,7 +591,7 @@ impl<T> OnceCell<T> {
         strategy: &mut impl for<'a> Strategy<'a>,
     ) -> Result<(), E> {
         // The event listener we're currently waiting on.
-        let event_listener = EventListener::new(&self.active_initializers);
+        let event_listener = EventListener::new();
         pin!(event_listener);
 
         let mut closure = Some(closure);
@@ -614,7 +614,7 @@ impl<T> OnceCell<T> {
                     if event_listener.is_listening() {
                         strategy.wait(event_listener.as_mut()).await;
                     } else {
-                        event_listener.as_mut().listen();
+                        event_listener.as_mut().listen(&self.active_initializers);
                     }
                 }
                 State::Uninitialized => {

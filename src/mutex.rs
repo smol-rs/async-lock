@@ -478,10 +478,7 @@ impl<T: ?Sized, B: Borrow<Mutex<T>>> AcquireSlow<B, T> {
     #[cold]
     fn new(mutex: B) -> Self {
         // Create a new instance of the listener.
-        let listener = {
-            let mutex = Borrow::<Mutex<T>>::borrow(&mutex);
-            EventListener::new(&mutex.lock_ops)
-        };
+        let listener = { EventListener::new() };
 
         AcquireSlow {
             mutex: Some(mutex),
@@ -532,7 +529,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
             loop {
                 // Start listening for events.
                 if !this.listener.is_listening() {
-                    this.listener.as_mut().listen();
+                    this.listener.as_mut().listen(&mutex.lock_ops);
 
                     // Try locking if nobody is being starved.
                     match mutex
@@ -596,7 +593,7 @@ impl<T: ?Sized, B: Unpin + Borrow<Mutex<T>>> EventListenerFuture for AcquireSlow
         loop {
             if !this.listener.is_listening() {
                 // Start listening for events.
-                this.listener.as_mut().listen();
+                this.listener.as_mut().listen(&mutex.lock_ops);
 
                 // Try locking if nobody else is being starved.
                 match mutex

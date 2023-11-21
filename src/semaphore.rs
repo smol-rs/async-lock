@@ -88,7 +88,7 @@ impl Semaphore {
     pub fn acquire(&self) -> Acquire<'_> {
         Acquire::_new(AcquireInner {
             semaphore: self,
-            listener: EventListener::new(&self.event),
+            listener: EventListener::new(),
         })
     }
 
@@ -176,7 +176,7 @@ impl Semaphore {
     pub fn acquire_arc(self: &Arc<Self>) -> AcquireArc {
         AcquireArc {
             semaphore: self.clone(),
-            listener: EventListener::new(&self.event),
+            listener: EventListener::new(),
         }
     }
 
@@ -245,7 +245,7 @@ impl<'a> EventListenerFuture for AcquireInner<'a> {
                 None => {
                     // Wait on the listener.
                     if !this.listener.is_listening() {
-                        this.listener.as_mut().listen();
+                        this.listener.as_mut().listen(&this.semaphore.event);
                     } else {
                         ready!(strategy.poll(this.listener.as_mut(), cx));
                     }
@@ -285,7 +285,7 @@ impl Future for AcquireArc {
                 None => {
                     // Wait on the listener.
                     if !this.listener.is_listening() {
-                        this.listener.as_mut().listen();
+                        this.listener.as_mut().listen(&this.semaphore.event);
                     } else {
                         ready!(this.listener.as_mut().poll(cx));
                     }

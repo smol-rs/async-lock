@@ -86,7 +86,7 @@ impl RawRwLock {
         RawRead {
             lock: self,
             state: self.state.load(Ordering::Acquire),
-            listener: EventListener::new(&self.no_writer),
+            listener: EventListener::new(),
         }
     }
 
@@ -161,7 +161,7 @@ impl RawRwLock {
     pub(super) fn write(&self) -> RawWrite<'_> {
         RawWrite {
             lock: self,
-            no_readers: EventListener::new(&self.no_readers),
+            no_readers: EventListener::new(),
             state: WriteState::Acquiring {
                 lock: self.mutex.lock(),
             },
@@ -193,7 +193,7 @@ impl RawRwLock {
 
         RawUpgrade {
             lock: Some(self),
-            listener: EventListener::new(&self.no_readers),
+            listener: EventListener::new(),
         }
     }
 
@@ -328,7 +328,7 @@ impl<'a> EventListenerFuture for RawRead<'a> {
             } else {
                 // Start listening for "no writer" events.
                 let load_ordering = if !this.listener.is_listening() {
-                    this.listener.as_mut().listen();
+                    this.listener.as_mut().listen(&this.lock.no_writer);
 
                     // Make sure there really is no writer.
                     Ordering::SeqCst
@@ -473,7 +473,7 @@ impl<'a> EventListenerFuture for RawWrite<'a> {
                     }
 
                     // Start waiting for the readers to finish.
-                    this.no_readers.as_mut().listen();
+                    this.no_readers.as_mut().listen(&this.lock.no_readers);
                     this.state.as_mut().set(WriteState::WaitingReaders);
                 }
 
@@ -494,7 +494,7 @@ impl<'a> EventListenerFuture for RawWrite<'a> {
                     // Wait for the readers to finish.
                     if !this.no_readers.is_listening() {
                         // Register a listener.
-                        this.no_readers.as_mut().listen();
+                        this.no_readers.as_mut().listen(&this.lock.no_readers);
                     } else {
                         // Wait for the readers to finish.
                         ready!(strategy.poll(this.no_readers.as_mut(), cx));
@@ -559,7 +559,7 @@ impl<'a> EventListenerFuture for RawUpgrade<'a> {
             // If there are readers, wait for them to finish.
             if !this.listener.is_listening() {
                 // Start listening for "no readers" events.
-                this.listener.as_mut().listen();
+                this.listener.as_mut().listen(&lock.no_readers);
             } else {
                 // Wait for the readers to finish.
                 ready!(strategy.poll(this.listener.as_mut(), cx));
