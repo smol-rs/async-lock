@@ -1,3 +1,7 @@
+# Version 3.1.2
+
+- Bump `event-listener` to version v4.0.0. (#69)
+
 # Version 3.1.1
 
 - Add a note to the documentation comparing this crate against `libstd`'s locks. (#58)
