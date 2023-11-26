@@ -54,7 +54,25 @@ fn smoke_blocking() {
     drop(lock.read_blocking());
     drop(lock.write_blocking());
     drop((lock.read_blocking(), lock.read_blocking()));
+    let read = lock.read_blocking();
+    let upgradabe = lock.upgradable_read_blocking();
+    drop(read);
+    drop(RwLockUpgradableReadGuard::upgrade_blocking(upgradabe));
     drop(lock.write_blocking());
+}
+
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+#[test]
+fn smoke_arc_blocking() {
+    let lock = Arc::new(RwLock::new(()));
+    drop(lock.read_arc_blocking());
+    drop(lock.write_arc_blocking());
+    drop((lock.read_arc_blocking(), lock.read_arc_blocking()));
+    let read = lock.read_arc_blocking();
+    let upgradabe = lock.upgradable_read_arc_blocking();
+    drop(read);
+    drop(RwLockUpgradableReadGuardArc::upgrade_blocking(upgradabe));
+    drop(lock.write_arc_blocking());
 }
 
 #[test]
