@@ -250,7 +250,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl fmt::Debug for AcquireInner<'_> {
+impl fmt::Debug for Acquire<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Acquire { .. }")
     }

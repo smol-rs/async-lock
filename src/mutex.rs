@@ -337,7 +337,7 @@ pin_project_lite::pin_project! {
 unsafe impl<T: Send + ?Sized> Send for Lock<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for Lock<'_, T> {}
 
-impl<T: ?Sized> fmt::Debug for LockInner<'_, T> {
+impl<T: ?Sized> fmt::Debug for Lock<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Lock { .. }")
     }
