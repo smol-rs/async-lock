@@ -147,6 +147,41 @@ impl<T> RwLock<T> {
     pub fn read_arc<'a>(self: &'a Arc<Self>) -> ReadArc<'a, T> {
         ReadArc::new(self.raw.read(), self)
     }
+
+    /// Acquires an owned, reference-counted read lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// Note that attempts to acquire a read lock will block if there are also concurrent attempts
+    /// to acquire a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`read_arc`][`RwLock::read_arc`] method,
+    /// this method will block the current thread until the read lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an asynchronous context may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use async_lock::RwLock;
+    ///
+    /// let lock = Arc::new(RwLock::new(1));
+    ///
+    /// let reader = lock.read_arc_blocking();
+    /// assert_eq!(*reader, 1);
+    ///
+    /// assert!(lock.try_read().is_some());
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn read_arc_blocking(self: &Arc<Self>) -> RwLockReadGuardArc<T> {
+        self.read_arc().wait()
+    }
 }
 
 impl<T: ?Sized> RwLock<T> {
@@ -347,6 +382,47 @@ impl<T: ?Sized> RwLock<T> {
         self.upgradable_read().wait()
     }
 
+    /// Attempts to acquire an owned, reference-counted read lock
+    /// with the possiblity to upgrade to a write lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// Upgradable read lock reserves the right to be upgraded to a write lock, which means there
+    /// can be at most one upgradable read lock at a time.
+    ///
+    /// Note that attempts to acquire an upgradable read lock will block if there are concurrent
+    /// attempts to acquire another upgradable read lock or a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`upgradable_read_arc`][`RwLock::upgradable_read_arc`]
+    /// method, this method will block the current thread until the read lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an asynchronous context may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
+    ///
+    /// let lock = Arc::new(RwLock::new(1));
+    ///
+    /// let reader = lock.upgradable_read_arc_blocking();
+    /// assert_eq!(*reader, 1);
+    /// assert_eq!(*lock.try_read().unwrap(), 1);
+    ///
+    /// let mut writer = RwLockUpgradableReadGuardArc::upgrade_blocking(reader);
+    /// *writer = 2;
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn upgradable_read_arc_blocking(self: &Arc<Self>) -> RwLockUpgradableReadGuardArc<T> {
+        self.upgradable_read_arc().wait()
+    }
+
     /// Attempts to acquire an owned, reference-counted read lock with the possiblity to
     /// upgrade to a write lock.
     ///
@@ -543,6 +619,36 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn write_arc<'a>(self: &'a Arc<Self>) -> WriteArc<'a, T> {
         WriteArc::new(self.raw.write(), self)
+    }
+
+    /// Acquires an owned, reference-counted write lock.
+    ///
+    /// Returns a guard that releases the lock when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`write_arc`][RwLock::write_arc] method, this method will
+    /// block the current thread until the write lock is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a lock can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an asynchronous context may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use async_lock::RwLock;
+    ///
+    /// let lock = Arc::new(RwLock::new(1));
+    ///
+    /// let writer = lock.write_arc_blocking();
+    /// assert!(lock.try_read().is_none());
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn write_arc_blocking(self: &Arc<Self>) -> RwLockWriteGuardArc<T> {
+        self.write_arc().wait()
     }
 
     /// Returns a mutable reference to the inner value.
@@ -1066,6 +1172,32 @@ impl<T: ?Sized> RwLockUpgradableReadGuardArc<T> {
                 ManuallyDrop::new(Self::into_arc(guard)),
             )
         }
+    }
+
+    /// Upgrades into a write lock.
+    ///
+    /// # Blocking
+    ///
+    /// This function will block the current thread until it is able to acquire the write lock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use async_lock::{RwLock, RwLockUpgradableReadGuardArc};
+    ///
+    /// let lock = Arc::new(RwLock::new(1));
+    ///
+    /// let reader = lock.upgradable_read_arc_blocking();
+    /// assert_eq!(*reader, 1);
+    ///
+    /// let mut writer = RwLockUpgradableReadGuardArc::upgrade_blocking(reader);
+    /// *writer = 2;
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn upgrade_blocking(guard: Self) -> RwLockWriteGuardArc<T> {
+        RwLockUpgradableReadGuardArc::upgrade(guard).wait()
     }
 }
 
