@@ -125,6 +125,17 @@ fn smoke_blocking() {
     assert!(s.try_acquire().is_some());
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+#[test]
+fn smoke_arc_blocking() {
+    let s = Arc::new(Semaphore::new(2));
+    let g1 = s.acquire_arc_blocking();
+    let _g2 = s.acquire_arc_blocking();
+    assert!(s.try_acquire().is_none());
+    drop(g1);
+    assert!(s.try_acquire().is_some());
+}
+
 #[test]
 fn add_permits() {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);

@@ -32,6 +32,14 @@ fn smoke_blocking() {
     drop(m.lock_blocking());
 }
 
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+#[test]
+fn smoke_arc_blocking() {
+    let m = Arc::new(Mutex::new(()));
+    drop(m.lock_arc_blocking());
+    drop(m.lock_arc_blocking());
+}
+
 #[test]
 fn try_lock() {
     let m = Mutex::new(());

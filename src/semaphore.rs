@@ -1,8 +1,7 @@
 use core::fmt;
-use core::future::Future;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use core::task::{Context, Poll};
+use core::task::Poll;
 
 use alloc::sync::Arc;
 
@@ -174,10 +173,38 @@ impl Semaphore {
     /// # });
     /// ```
     pub fn acquire_arc(self: &Arc<Self>) -> AcquireArc {
-        AcquireArc {
+        AcquireArc::_new(AcquireArcInner {
             semaphore: self.clone(),
             listener: EventListener::new(),
-        }
+        })
+    }
+
+    /// Waits for an owned permit for a concurrent operation.
+    ///
+    /// Returns a guard that releases the permit when dropped.
+    ///
+    /// # Blocking
+    ///
+    /// Rather than using asynchronous waiting, like the [`acquire_arc`][Semaphore::acquire_arc] method,
+    /// this method will block the current thread until the permit is acquired.
+    ///
+    /// This method should not be used in an asynchronous context. It is intended to be
+    /// used in a way that a semaphore can be used in both asynchronous and synchronous contexts.
+    /// Calling this method in an asynchronous context may result in a deadlock.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::sync::Arc;
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Arc::new(Semaphore::new(2));
+    /// let guard = s.acquire_arc_blocking();
+    /// ```
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    #[inline]
+    pub fn acquire_arc_blocking(self: &Arc<Self>) -> SemaphoreGuardArc {
+        self.acquire_arc().wait()
     }
 
     /// Adds `n` additional permits to the semaphore.
@@ -223,7 +250,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl fmt::Debug for AcquireInner<'_> {
+impl fmt::Debug for Acquire<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("Acquire { .. }")
     }
@@ -255,9 +282,15 @@ impl<'a> EventListenerFuture for AcquireInner<'a> {
     }
 }
 
-pin_project_lite::pin_project! {
+easy_wrapper! {
     /// The future returned by [`Semaphore::acquire_arc`].
-    pub struct AcquireArc {
+    pub struct AcquireArc(AcquireArcInner => SemaphoreGuardArc);
+    #[cfg(all(feature = "std", not(target_family = "wasm")))]
+    pub(crate) wait();
+}
+
+pin_project_lite::pin_project! {
+    struct AcquireArcInner {
         // The semaphore being acquired.
         semaphore: Arc<Semaphore>,
 
@@ -273,10 +306,14 @@ impl fmt::Debug for AcquireArc {
     }
 }
 
-impl Future for AcquireArc {
+impl EventListenerFuture for AcquireArcInner {
     type Output = SemaphoreGuardArc;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll_with_strategy<'x, S: Strategy<'x>>(
+        self: Pin<&mut Self>,
+        strategy: &mut S,
+        cx: &mut S::Context,
+    ) -> Poll<Self::Output> {
         let mut this = self.project();
 
         loop {
@@ -287,7 +324,7 @@ impl Future for AcquireArc {
                     if !this.listener.is_listening() {
                         this.listener.as_mut().listen(&this.semaphore.event);
                     } else {
-                        ready!(this.listener.as_mut().poll(cx));
+                        ready!(strategy.poll(this.listener.as_mut(), cx));
                     }
                 }
             }
