@@ -1,3 +1,7 @@
+# Version 3.2.0
+
+- Add missing methods for blocking on locking with types wrapped in `Arc` (#71).
+
 # Version 3.1.2
 
 - Bump `event-listener` to version v4.0.0. (#69)
