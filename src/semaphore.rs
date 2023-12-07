@@ -340,7 +340,7 @@ pub struct SemaphoreGuard<'a>(&'a Semaphore);
 impl SemaphoreGuard<'_> {
     /// Drops the guard _without_ releasing the acquired permit.
     pub fn forget(self) {
-        let _ = std::mem::ManuallyDrop::new(self);
+        let _ = core::mem::ManuallyDrop::new(self);
     }
 }
 
@@ -359,7 +359,7 @@ pub struct SemaphoreGuardArc(Arc<Semaphore>);
 impl SemaphoreGuardArc {
     /// Drops the guard _without_ releasing the acquired permit.
     pub fn forget(self) {
-        let _ = std::mem::ManuallyDrop::new(self);
+        let _ = core::mem::ManuallyDrop::new(self);
     }
 }
 
