@@ -337,6 +337,13 @@ impl EventListenerFuture for AcquireArcInner {
 #[derive(Debug)]
 pub struct SemaphoreGuard<'a>(&'a Semaphore);
 
+impl SemaphoreGuard<'_> {
+    /// Drops the guard _without_ releasing the acquired permit.
+    pub fn forget(self) {
+        let _ = std::mem::ManuallyDrop::new(self);
+    }
+}
+
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
         self.0.count.fetch_add(1, Ordering::AcqRel);
@@ -348,6 +355,13 @@ impl Drop for SemaphoreGuard<'_> {
 #[clippy::has_significant_drop]
 #[derive(Debug)]
 pub struct SemaphoreGuardArc(Arc<Semaphore>);
+
+impl SemaphoreGuardArc {
+    /// Drops the guard _without_ releasing the acquired permit.
+    pub fn forget(self) {
+        let _ = std::mem::ManuallyDrop::new(self);
+    }
+}
 
 impl Drop for SemaphoreGuardArc {
     fn drop(&mut self) {
