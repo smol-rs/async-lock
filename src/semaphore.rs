@@ -1,5 +1,6 @@
 use core::fmt;
 use core::pin::Pin;
+use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
 
@@ -339,6 +340,7 @@ pub struct SemaphoreGuard<'a>(&'a Semaphore);
 
 impl SemaphoreGuard<'_> {
     /// Drops the guard _without_ releasing the acquired permit.
+    #[inline]
     pub fn forget(self) {
         let _ = core::mem::ManuallyDrop::new(self);
     }
@@ -358,8 +360,14 @@ pub struct SemaphoreGuardArc(Arc<Semaphore>);
 
 impl SemaphoreGuardArc {
     /// Drops the guard _without_ releasing the acquired permit.
+    /// (Will still decrement the `Arc` reference count.)
+    #[inline]
     pub fn forget(self) {
-        let _ = core::mem::ManuallyDrop::new(self);
+        let mut manual = core::mem::ManuallyDrop::new(self);
+
+        // Drop the inner `Arc` in order to decrement the reference count.
+        // SAFETY: `manual` not used after this
+        let _arc = unsafe { addr_of_mut!(manual.0).read() };
     }
 }
 
