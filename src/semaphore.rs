@@ -342,7 +342,7 @@ impl SemaphoreGuard<'_> {
     /// Drops the guard _without_ releasing the acquired permit.
     #[inline]
     pub fn forget(self) {
-        let _ = core::mem::ManuallyDrop::new(self);
+        core::mem::forget(self);
     }
 }
 
