@@ -364,7 +364,7 @@ impl SemaphoreGuardArc {
     #[inline]
     pub fn forget(mut self) {
         // Drop the inner `Arc` in order to decrement the reference count.
-        // FIXME: get rid of the `Option` once RFC 3466 or equivalent is merged.
+        // FIXME: get rid of the `Option` once RFC 3466 or equivalent becomes available.
         drop(self.0.take());
         mem::forget(self);
     }
