@@ -1,6 +1,6 @@
 use core::fmt;
+use core::mem;
 use core::pin::Pin;
-use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
 
@@ -342,7 +342,7 @@ impl SemaphoreGuard<'_> {
     /// Drops the guard _without_ releasing the acquired permit.
     #[inline]
     pub fn forget(self) {
-        core::mem::forget(self);
+        mem::forget(self);
     }
 }
 
@@ -356,24 +356,24 @@ impl Drop for SemaphoreGuard<'_> {
 /// An owned guard that releases the acquired permit.
 #[clippy::has_significant_drop]
 #[derive(Debug)]
-pub struct SemaphoreGuardArc(Arc<Semaphore>);
+pub struct SemaphoreGuardArc(Option<Arc<Semaphore>>);
 
 impl SemaphoreGuardArc {
     /// Drops the guard _without_ releasing the acquired permit.
     /// (Will still decrement the `Arc` reference count.)
     #[inline]
-    pub fn forget(self) {
-        let mut manual = core::mem::ManuallyDrop::new(self);
-
+    pub fn forget(mut self) {
         // Drop the inner `Arc` in order to decrement the reference count.
-        // SAFETY: `manual` not used after this
-        let _arc = unsafe { addr_of_mut!(manual.0).read() };
+        // FIXME: get rid of the `Option` once RFC 3466 or equivalent is merged.
+        drop(self.0.take());
+        mem::forget(self);
     }
 }
 
 impl Drop for SemaphoreGuardArc {
     fn drop(&mut self) {
-        self.0.count.fetch_add(1, Ordering::AcqRel);
-        self.0.event.notify(1);
+        let opt = self.0.take().unwrap();
+        opt.count.fetch_add(1, Ordering::AcqRel);
+        opt.event.notify(1);
     }
 }
