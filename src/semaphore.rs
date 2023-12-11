@@ -152,7 +152,7 @@ impl Semaphore {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return Some(SemaphoreGuardArc(self.clone())),
+                Ok(_) => return Some(SemaphoreGuardArc(Some(self.clone()))),
                 Err(c) => count = c,
             }
         }
