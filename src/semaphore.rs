@@ -1,4 +1,5 @@
 use core::fmt;
+use core::mem;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
@@ -151,7 +152,7 @@ impl Semaphore {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => return Some(SemaphoreGuardArc(self.clone())),
+                Ok(_) => return Some(SemaphoreGuardArc(Some(self.clone()))),
                 Err(c) => count = c,
             }
         }
@@ -337,6 +338,14 @@ impl EventListenerFuture for AcquireArcInner {
 #[derive(Debug)]
 pub struct SemaphoreGuard<'a>(&'a Semaphore);
 
+impl SemaphoreGuard<'_> {
+    /// Drops the guard _without_ releasing the acquired permit.
+    #[inline]
+    pub fn forget(self) {
+        mem::forget(self);
+    }
+}
+
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
         self.0.count.fetch_add(1, Ordering::AcqRel);
@@ -347,11 +356,24 @@ impl Drop for SemaphoreGuard<'_> {
 /// An owned guard that releases the acquired permit.
 #[clippy::has_significant_drop]
 #[derive(Debug)]
-pub struct SemaphoreGuardArc(Arc<Semaphore>);
+pub struct SemaphoreGuardArc(Option<Arc<Semaphore>>);
+
+impl SemaphoreGuardArc {
+    /// Drops the guard _without_ releasing the acquired permit.
+    /// (Will still decrement the `Arc` reference count.)
+    #[inline]
+    pub fn forget(mut self) {
+        // Drop the inner `Arc` in order to decrement the reference count.
+        // FIXME: get rid of the `Option` once RFC 3466 or equivalent becomes available.
+        drop(self.0.take());
+        mem::forget(self);
+    }
+}
 
 impl Drop for SemaphoreGuardArc {
     fn drop(&mut self) {
-        self.0.count.fetch_add(1, Ordering::AcqRel);
-        self.0.event.notify(1);
+        let opt = self.0.take().unwrap();
+        opt.count.fetch_add(1, Ordering::AcqRel);
+        opt.event.notify(1);
     }
 }
