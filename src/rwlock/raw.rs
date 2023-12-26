@@ -6,6 +6,7 @@
 //! the locking code only once, and also lets us make
 //! [`RwLockReadGuard`](super::RwLockReadGuard) covariant in `T`.
 
+use core::marker::PhantomPinned;
 use core::mem::forget;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -86,7 +87,8 @@ impl RawRwLock {
         RawRead {
             lock: self,
             state: self.state.load(Ordering::Acquire),
-            listener: EventListener::new(),
+            listener: None,
+            _pin: PhantomPinned,
         }
     }
 
@@ -161,7 +163,7 @@ impl RawRwLock {
     pub(super) fn write(&self) -> RawWrite<'_> {
         RawWrite {
             lock: self,
-            no_readers: EventListener::new(),
+            no_readers: None,
             state: WriteState::Acquiring {
                 lock: self.mutex.lock(),
             },
@@ -193,7 +195,8 @@ impl RawRwLock {
 
         RawUpgrade {
             lock: Some(self),
-            listener: EventListener::new(),
+            listener: None,
+            _pin: PhantomPinned,
         }
     }
 
@@ -292,8 +295,11 @@ pin_project_lite::pin_project! {
         state: usize,
 
         // The listener for the "no writers" event.
+        listener: Option<EventListener>,
+
+        // Making this type `!Unpin` enables future optimizations.
         #[pin]
-        listener: EventListener,
+        _pin: PhantomPinned
     }
 }
 
@@ -305,7 +311,7 @@ impl<'a> EventListenerFuture for RawRead<'a> {
         strategy: &mut S,
         cx: &mut S::Context,
     ) -> Poll<()> {
-        let mut this = self.project();
+        let this = self.project();
 
         loop {
             if *this.state & WRITER_BIT == 0 {
@@ -327,14 +333,14 @@ impl<'a> EventListenerFuture for RawRead<'a> {
                 }
             } else {
                 // Start listening for "no writer" events.
-                let load_ordering = if !this.listener.is_listening() {
-                    this.listener.as_mut().listen(&this.lock.no_writer);
+                let load_ordering = if this.listener.is_none() {
+                    *this.listener = Some(this.lock.no_writer.listen());
 
                     // Make sure there really is no writer.
                     Ordering::SeqCst
                 } else {
                     // Wait for the writer to finish.
-                    ready!(strategy.poll(this.listener.as_mut(), cx));
+                    ready!(strategy.poll(this.listener, cx));
 
                     // Notify the next reader waiting in list.
                     this.lock.no_writer.notify(1);
@@ -409,8 +415,7 @@ pin_project_lite::pin_project! {
         pub(super) lock: &'a RawRwLock,
 
         // Our listener for the "no readers" event.
-        #[pin]
-        no_readers: EventListener,
+        no_readers: Option<EventListener>,
 
         // Current state fof this future.
         #[pin]
@@ -473,12 +478,12 @@ impl<'a> EventListenerFuture for RawWrite<'a> {
                     }
 
                     // Start waiting for the readers to finish.
-                    this.no_readers.as_mut().listen(&this.lock.no_readers);
+                    *this.no_readers = Some(this.lock.no_readers.listen());
                     this.state.as_mut().set(WriteState::WaitingReaders);
                 }
 
                 WriteStateProj::WaitingReaders => {
-                    let load_ordering = if this.no_readers.is_listening() {
+                    let load_ordering = if this.no_readers.is_some() {
                         Ordering::Acquire
                     } else {
                         Ordering::SeqCst
@@ -492,12 +497,12 @@ impl<'a> EventListenerFuture for RawWrite<'a> {
                     }
 
                     // Wait for the readers to finish.
-                    if !this.no_readers.is_listening() {
+                    if this.no_readers.is_none() {
                         // Register a listener.
-                        this.no_readers.as_mut().listen(&this.lock.no_readers);
+                        *this.no_readers = Some(this.lock.no_readers.listen());
                     } else {
                         // Wait for the readers to finish.
-                        ready!(strategy.poll(this.no_readers.as_mut(), cx));
+                        ready!(strategy.poll(this.no_readers, cx));
                     };
                 }
                 WriteStateProj::Acquired => panic!("Write lock already acquired"),
@@ -513,8 +518,11 @@ pin_project_lite::pin_project! {
         lock: Option<&'a RawRwLock>,
 
         // The event listener we are waiting on.
+        listener: Option<EventListener>,
+
+        // Keeping this future `!Unpin` enables future optimizations.
         #[pin]
-        listener: EventListener,
+        _pin: PhantomPinned
     }
 
     impl PinnedDrop for RawUpgrade<'_> {
@@ -539,12 +547,12 @@ impl<'a> EventListenerFuture for RawUpgrade<'a> {
         strategy: &mut S,
         cx: &mut S::Context,
     ) -> Poll<&'a RawRwLock> {
-        let mut this = self.project();
+        let this = self.project();
         let lock = this.lock.expect("cannot poll future after completion");
 
         // If there are readers, we need to wait for them to finish.
         loop {
-            let load_ordering = if this.listener.is_listening() {
+            let load_ordering = if this.listener.is_some() {
                 Ordering::Acquire
             } else {
                 Ordering::SeqCst
@@ -557,12 +565,12 @@ impl<'a> EventListenerFuture for RawUpgrade<'a> {
             }
 
             // If there are readers, wait for them to finish.
-            if !this.listener.is_listening() {
+            if this.listener.is_none() {
                 // Start listening for "no readers" events.
-                this.listener.as_mut().listen(&lock.no_readers);
+                *this.listener = Some(lock.no_readers.listen());
             } else {
                 // Wait for the readers to finish.
-                ready!(strategy.poll(this.listener.as_mut(), cx));
+                ready!(strategy.poll(this.listener, cx));
             };
         }
 

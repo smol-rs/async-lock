@@ -1,4 +1,5 @@
 use core::fmt;
+use core::marker::PhantomPinned;
 use core::mem;
 use core::pin::Pin;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -88,7 +89,8 @@ impl Semaphore {
     pub fn acquire(&self) -> Acquire<'_> {
         Acquire::_new(AcquireInner {
             semaphore: self,
-            listener: EventListener::new(),
+            listener: None,
+            _pin: PhantomPinned,
         })
     }
 
@@ -176,7 +178,8 @@ impl Semaphore {
     pub fn acquire_arc(self: &Arc<Self>) -> AcquireArc {
         AcquireArc::_new(AcquireArcInner {
             semaphore: self.clone(),
-            listener: EventListener::new(),
+            listener: None,
+            _pin: PhantomPinned,
         })
     }
 
@@ -246,8 +249,11 @@ pin_project_lite::pin_project! {
         semaphore: &'a Semaphore,
 
         // The listener waiting on the semaphore.
+        listener: Option<EventListener>,
+
+        // Keeping this future `!Unpin` enables future optimizations.
         #[pin]
-        listener: EventListener,
+        _pin: PhantomPinned
     }
 }
 
@@ -265,17 +271,17 @@ impl<'a> EventListenerFuture for AcquireInner<'a> {
         strategy: &mut S,
         cx: &mut S::Context,
     ) -> Poll<Self::Output> {
-        let mut this = self.project();
+        let this = self.project();
 
         loop {
             match this.semaphore.try_acquire() {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    if !this.listener.is_listening() {
-                        this.listener.as_mut().listen(&this.semaphore.event);
+                    if this.listener.is_none() {
+                        *this.listener = Some(this.semaphore.event.listen());
                     } else {
-                        ready!(strategy.poll(this.listener.as_mut(), cx));
+                        ready!(strategy.poll(this.listener, cx));
                     }
                 }
             }
@@ -296,8 +302,11 @@ pin_project_lite::pin_project! {
         semaphore: Arc<Semaphore>,
 
         // The listener waiting on the semaphore.
+        listener: Option<EventListener>,
+
+        // Keeping this future `!Unpin` enables future optimizations.
         #[pin]
-        listener: EventListener,
+        _pin: PhantomPinned
     }
 }
 
@@ -315,17 +324,17 @@ impl EventListenerFuture for AcquireArcInner {
         strategy: &mut S,
         cx: &mut S::Context,
     ) -> Poll<Self::Output> {
-        let mut this = self.project();
+        let this = self.project();
 
         loop {
             match this.semaphore.try_acquire_arc() {
                 Some(guard) => return Poll::Ready(guard),
                 None => {
                     // Wait on the listener.
-                    if !this.listener.is_listening() {
-                        this.listener.as_mut().listen(&this.semaphore.event);
+                    if this.listener.is_none() {
+                        *this.listener = Some(this.semaphore.event.listen());
                     } else {
-                        ready!(strategy.poll(this.listener.as_mut(), cx));
+                        ready!(strategy.poll(this.listener, cx));
                     }
                 }
             }

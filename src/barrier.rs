@@ -82,7 +82,7 @@ impl Barrier {
         BarrierWait::_new(BarrierWaitInner {
             barrier: self,
             lock: Some(self.state.lock()),
-            evl: EventListener::new(),
+            evl: None,
             state: WaitState::Initial,
         })
     }
@@ -148,8 +148,7 @@ pin_project_lite::pin_project! {
         lock: Option<Lock<'a, State>>,
 
         // An event listener for the `barrier.event` event.
-        #[pin]
-        evl: EventListener,
+        evl: Option<EventListener>,
 
         // The current state of the future.
         state: WaitState,
@@ -200,7 +199,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
 
                     if state.count < this.barrier.n {
                         // We need to wait for the event.
-                        this.evl.as_mut().listen(&this.barrier.event);
+                        *this.evl = Some(this.barrier.event.listen());
                         *this.state = WaitState::Waiting { local_gen };
                     } else {
                         // We are the last one.
@@ -212,7 +211,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
                 }
 
                 WaitState::Waiting { local_gen } => {
-                    ready!(strategy.poll(this.evl.as_mut(), cx));
+                    ready!(strategy.poll(this.evl, cx));
 
                     // We are now re-acquiring the mutex.
                     this.lock.as_mut().set(Some(this.barrier.state.lock()));
@@ -233,7 +232,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
 
                     if *local_gen == state.generation_id && state.count < this.barrier.n {
                         // We need to wait for the event again.
-                        this.evl.as_mut().listen(&this.barrier.event);
+                        *this.evl = Some(this.barrier.event.listen());
                         *this.state = WaitState::Waiting {
                             local_gen: *local_gen,
                         };
