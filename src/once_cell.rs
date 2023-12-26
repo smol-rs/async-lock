@@ -9,8 +9,11 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-use event_listener::{Event, Listener};
+use event_listener::Event;
 use event_listener_strategy::{NonBlocking, Strategy};
+
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+use event_listener::Listener;
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
