@@ -24,7 +24,7 @@ default = ["std"]
 std = ["event-listener/std", "event-listener-strategy/std"]
 
 [dev-dependencies]
-async-channel = "2.0.0"
+async-channel = "2.1.1"
 fastrand = "2.0.0"
 futures-lite = "2.0.0"
 waker-fn = "1.1.0"
@@ -35,3 +35,4 @@ wasm-bindgen-test = "0.3"
 [patch.crates-io]
 event-listener = { git = "https://github.com/smol-rs/event-listener.git", branch = "notgull/break" }
 event-listener-strategy = { git = "https://github.com/smol-rs/event-listener-strategy.git", branch = "notgull/evl5" }
+async-channel = { git = "https://github.com/smol-rs/async-channel.git", branch = "notgull/evl5" }
