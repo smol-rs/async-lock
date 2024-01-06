@@ -29,5 +29,5 @@ fastrand = "2.0.0"
 futures-lite = "2.0.0"
 waker-fn = "1.1.0"
 
-[target.'cfg(any(target_arch = "wasm32", target_arch = "wasm64"))'.dev-dependencies]
+[target.'cfg(target_family = "wasm")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
