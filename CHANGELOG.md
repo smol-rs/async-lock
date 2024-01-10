@@ -1,3 +1,8 @@
+# Version 3.3.0
+
+- Add a `forget()` method for semaphore guards. (#73)
+- Increase MSRV to v1.60. (#75)
+
 # Version 3.2.0
 
 - Add missing methods for blocking on locking with types wrapped in `Arc` (#71).
