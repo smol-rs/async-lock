@@ -426,13 +426,18 @@ pin_project_lite::pin_project! {
     impl<T: ?Sized> PinnedDrop for UpgradeArcInner<T> {
         fn drop(this: Pin<&mut Self>) {
             let this = this.project();
-            if !this.raw.is_ready() {
+            let is_ready = this.raw.is_ready();
+
+            // SAFETY: The drop impl for raw assumes that it is pinned.
+            unsafe {
+                ManuallyDrop::drop(this.raw.get_unchecked_mut());
+            }
+
+            if !is_ready {
                 // SAFETY: we drop the `Arc` (decrementing the reference count)
                 // only if this future was cancelled before returning an
                 // upgraded lock.
                 unsafe {
-                    // SAFETY: The drop impl for raw assumes that it is pinned.
-                    ManuallyDrop::drop(this.raw.get_unchecked_mut());
                     ManuallyDrop::drop(this.lock);
                 };
             }
