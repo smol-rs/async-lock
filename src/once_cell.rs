@@ -502,10 +502,11 @@ impl<T> OnceCell<T> {
     /// ```
     #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn get_or_init_blocking(&self, closure: impl FnOnce() -> T + Unpin) -> &T {
-        match self.get_or_try_init_blocking(move || {
+        let result = self.get_or_try_init_blocking(move || {
             let result: Result<T, Infallible> = Ok(closure());
             result
-        }) {
+        });
+        match result {
             Ok(value) => value,
             Err(infallible) => match infallible {},
         }

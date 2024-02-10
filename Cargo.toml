@@ -5,8 +5,8 @@ name = "async-lock"
 # - Create "v3.x.y" git tag
 version = "3.3.0"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
-edition = "2018"
-rust-version = "1.61"
+edition = "2021"
+rust-version = "1.60"
 description = "Async synchronization primitives"
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/smol-rs/async-lock"
