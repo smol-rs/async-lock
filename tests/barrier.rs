@@ -47,6 +47,7 @@ fn smoke() {
 
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 #[test]
+#[cfg_attr(miri, ignore)]
 fn smoke_blocking() {
     future::block_on(async move {
         const N: usize = 10;

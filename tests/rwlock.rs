@@ -120,7 +120,8 @@ fn get_mut() {
     assert_eq!(lock.into_inner(), 20);
 }
 
-#[cfg(not(target_family = "wasm"))]
+// Miri bug; this works when async is replaced with blocking
+#[cfg(not(any(target_family = "wasm", miri)))]
 #[test]
 fn contention() {
     const N: u32 = 10;
@@ -154,7 +155,8 @@ fn contention() {
     });
 }
 
-#[cfg(not(target_family = "wasm"))]
+// Miri bug; this works when async is replaced with blocking
+#[cfg(not(any(target_family = "wasm", miri)))]
 #[test]
 fn contention_arc() {
     const N: u32 = 10;

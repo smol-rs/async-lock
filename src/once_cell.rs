@@ -9,8 +9,11 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 
-use event_listener::{Event, EventListener};
+use event_listener::Event;
 use event_listener_strategy::{NonBlocking, Strategy};
+
+#[cfg(all(feature = "std", not(target_family = "wasm")))]
+use event_listener::Listener;
 
 /// The current state of the `OnceCell`.
 #[derive(Copy, Clone, PartialEq, Eq)]
@@ -274,9 +277,7 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = EventListener::new();
-        pin!(listener);
-        listener.as_mut().listen(&self.passive_waiters);
+        event_listener::listener!(self.passive_waiters => listener);
 
         // Try again.
         if let Some(value) = self.get() {
@@ -329,9 +330,7 @@ impl<T> OnceCell<T> {
         }
 
         // Slow path: wait for the value to be initialized.
-        let listener = EventListener::new();
-        pin!(listener);
-        listener.as_mut().listen(&self.passive_waiters);
+        event_listener::listener!(self.passive_waiters => listener);
 
         // Try again.
         if let Some(value) = self.get() {
@@ -503,10 +502,11 @@ impl<T> OnceCell<T> {
     /// ```
     #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn get_or_init_blocking(&self, closure: impl FnOnce() -> T + Unpin) -> &T {
-        match self.get_or_try_init_blocking(move || {
+        let result = self.get_or_try_init_blocking(move || {
             let result: Result<T, Infallible> = Ok(closure());
             result
-        }) {
+        });
+        match result {
             Ok(value) => value,
             Err(infallible) => match infallible {},
         }
@@ -591,8 +591,7 @@ impl<T> OnceCell<T> {
         strategy: &mut impl for<'a> Strategy<'a>,
     ) -> Result<(), E> {
         // The event listener we're currently waiting on.
-        let event_listener = EventListener::new();
-        pin!(event_listener);
+        let mut event_listener = None;
 
         let mut closure = Some(closure);
 
@@ -611,10 +610,10 @@ impl<T> OnceCell<T> {
                     // but we do not have the ability to initialize it.
                     //
                     // We need to wait the initialization to complete.
-                    if event_listener.is_listening() {
-                        strategy.wait(event_listener.as_mut()).await;
+                    if let Some(listener) = event_listener.take() {
+                        strategy.wait(listener).await;
                     } else {
-                        event_listener.as_mut().listen(&self.active_initializers);
+                        event_listener = Some(self.active_initializers.listen());
                     }
                 }
                 State::Uninitialized => {
