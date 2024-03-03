@@ -8,8 +8,6 @@ use common::check_yields_when_contended;
 #[cfg(not(target_family = "wasm"))]
 use futures_lite::prelude::*;
 #[cfg(not(target_family = "wasm"))]
-use std::future::Future;
-#[cfg(not(target_family = "wasm"))]
 use std::thread;
 
 use futures_lite::future;
