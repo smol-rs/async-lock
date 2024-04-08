@@ -123,6 +123,8 @@ impl Barrier {
     ///         println!("after wait");
     ///     });
     /// }
+    /// # // Wait for threads to stop.
+    /// # std::thread::sleep(std::time::Duration::from_secs(1));
     /// ```
     #[cfg(all(feature = "std", not(target_family = "wasm")))]
     pub fn wait_blocking(&self) -> BarrierWaitResult {
