@@ -5,6 +5,7 @@ use async_lock::Barrier;
 use futures_lite::future;
 
 #[test]
+#[cfg_attr(miri, ignore)]
 fn smoke() {
     future::block_on(async move {
         const N: usize = 10;
