@@ -12,7 +12,7 @@ fn smoke() {
         let barrier = Arc::new(Barrier::new(N));
 
         for _ in 0..10 {
-            let (tx, rx) = async_channel::unbounded();
+            let (tx, rx) = flume::unbounded();
 
             for _ in 0..N - 1 {
                 let c = barrier.clone();
@@ -21,7 +21,7 @@ fn smoke() {
                 thread::spawn(move || {
                     future::block_on(async move {
                         let res = c.wait().await;
-                        tx.send(res.is_leader()).await.unwrap();
+                        tx.send_async(res.is_leader()).await.unwrap();
                     })
                 });
             }
@@ -35,7 +35,7 @@ fn smoke() {
 
             // Now, the barrier is cleared and we should get data.
             for _ in 0..N - 1 {
-                if rx.recv().await.unwrap() {
+                if rx.recv_async().await.unwrap() {
                     assert!(!leader_found);
                     leader_found = true;
                 }
@@ -55,7 +55,7 @@ fn smoke_blocking() {
         let barrier = Arc::new(Barrier::new(N));
 
         for _ in 0..10 {
-            let (tx, rx) = async_channel::unbounded();
+            let (tx, rx) = flume::unbounded();
 
             for _ in 0..N - 1 {
                 let c = barrier.clone();
@@ -63,7 +63,7 @@ fn smoke_blocking() {
 
                 thread::spawn(move || {
                     let res = c.wait_blocking();
-                    tx.send_blocking(res.is_leader()).unwrap();
+                    tx.send(res.is_leader()).unwrap();
                 });
             }
 
@@ -76,7 +76,7 @@ fn smoke_blocking() {
 
             // Now, the barrier is cleared and we should get data.
             for _ in 0..N - 1 {
-                if rx.recv().await.unwrap() {
+                if rx.recv_async().await.unwrap() {
                     assert!(!leader_found);
                     leader_found = true;
                 }

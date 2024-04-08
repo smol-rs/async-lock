@@ -63,7 +63,7 @@ fn get_mut() {
 #[test]
 fn contention() {
     future::block_on(async {
-        let (tx, rx) = async_channel::unbounded();
+        let (tx, rx) = flume::unbounded();
 
         let tx = Arc::new(tx);
         let mutex = Arc::new(Mutex::new(0i32));
@@ -77,14 +77,14 @@ fn contention() {
                 future::block_on(async move {
                     let mut lock = mutex.lock().await;
                     *lock += 1;
-                    tx.send(()).await.unwrap();
+                    tx.send_async(()).await.unwrap();
                     drop(lock);
                 })
             });
         }
 
         for _ in 0..num_tasks {
-            rx.recv().await.unwrap();
+            rx.recv_async().await.unwrap();
         }
 
         let lock = mutex.lock().await;
