@@ -756,12 +756,3 @@ impl<T: ?Sized> DerefMut for MutexGuardArc<T> {
         unsafe { &mut *self.0.data.get() }
     }
 }
-
-/// Calls a function when dropped.
-struct CallOnDrop<F: Fn()>(F);
-
-impl<F: Fn()> Drop for CallOnDrop<F> {
-    fn drop(&mut self) {
-        (self.0)();
-    }
-}
