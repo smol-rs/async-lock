@@ -118,7 +118,7 @@ fn get_mut() {
     assert_eq!(lock.into_inner(), 20);
 }
 
-// Miri bug; this works when async is replaced with blocking
+#[cfg_attr(miri, ignore)]
 #[cfg(not(target_family = "wasm"))]
 #[test]
 fn contention() {
@@ -151,6 +151,38 @@ fn contention() {
             rx.recv_async().await.unwrap();
         }
     });
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[test]
+fn contention_blocking() {
+    const N: u32 = 10;
+    const M: usize = if cfg!(miri) { 100 } else { 1000 };
+
+    let (tx, rx) = flume::unbounded();
+    let tx = Arc::new(tx);
+    let rw = Arc::new(RwLock::new(()));
+
+    // Spawn N tasks that randomly acquire the lock M times.
+    for _ in 0..N {
+        let tx = tx.clone();
+        let rw = rw.clone();
+
+        let _spawned = std::thread::spawn(|| {
+            for _ in 0..M {
+                if fastrand::u32(..N) == 0 {
+                    drop(rw.write_blocking());
+                } else {
+                    drop(rw.read_blocking());
+                }
+            }
+            tx.send(()).unwrap();
+        });
+    }
+
+    for _ in 0..N {
+        rx.recv().unwrap();
+    }
 }
 
 #[cfg(not(target_family = "wasm"))]
