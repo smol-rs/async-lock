@@ -185,6 +185,7 @@ fn contention_blocking() {
     }
 }
 
+#[cfg_attr(miri, ignore)]
 #[cfg(not(target_family = "wasm"))]
 #[test]
 fn contention_arc() {
