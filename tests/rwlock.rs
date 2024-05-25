@@ -168,7 +168,7 @@ fn contention_blocking() {
         let tx = tx.clone();
         let rw = rw.clone();
 
-        let _spawned = std::thread::spawn(|| {
+        let _spawned = std::thread::spawn(move || {
             for _ in 0..M {
                 if fastrand::u32(..N) == 0 {
                     drop(rw.write_blocking());
