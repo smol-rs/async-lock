@@ -121,7 +121,6 @@ fn get_mut() {
 // Miri bug; this works when async is replaced with blocking
 #[cfg(not(target_family = "wasm"))]
 #[test]
-#[cfg_attr(miri, ignore)]
 fn contention() {
     const N: u32 = 10;
     const M: usize = if cfg!(miri) { 100 } else { 1000 };
@@ -156,7 +155,6 @@ fn contention() {
 
 #[cfg(not(target_family = "wasm"))]
 #[test]
-#[cfg_attr(miri, ignore)]
 fn contention_arc() {
     const N: u32 = 10;
     const M: usize = if cfg!(miri) { 100 } else { 1000 };
