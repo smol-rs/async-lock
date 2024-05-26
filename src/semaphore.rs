@@ -2,8 +2,9 @@ use core::fmt;
 use core::marker::PhantomPinned;
 use core::mem;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
+
+use crate::sync::atomic::{AtomicUsize, Ordering};
 
 use alloc::sync::Arc;
 
@@ -18,19 +19,22 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    /// Creates a new semaphore with a limit of `n` concurrent operations.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use async_lock::Semaphore;
-    ///
-    /// let s = Semaphore::new(5);
-    /// ```
-    pub const fn new(n: usize) -> Semaphore {
-        Semaphore {
-            count: AtomicUsize::new(n),
-            event: Event::new(),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        /// Creates a new semaphore with a limit of `n` concurrent operations.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use async_lock::Semaphore;
+        ///
+        /// let s = Semaphore::new(5);
+        /// ```
+        pub const fn new(n: usize) -> Semaphore {
+            Semaphore {
+                count: AtomicUsize::new(n),
+                event: Event::new(),
+            }
         }
     }
 

@@ -18,10 +18,25 @@ exclude = ["/.*"]
 event-listener = { version = "5.0.0", default-features = false }
 event-listener-strategy = { version = "0.5.0", default-features = false }
 pin-project-lite = "0.2.11"
+portable-atomic-util = { version = "0.1.4", default-features = false, optional = true, features = ["alloc"] }
+
+[dependencies.portable_atomic_crate]
+package = "portable-atomic"
+version = "1.2.0"
+default-features = false
+optional = true
+
+[target.'cfg(loom)'.dependencies]
+loom = { version = "0.7", optional = true }
 
 [features]
 default = ["std"]
+portable-atomic = ["portable-atomic-util", "portable_atomic_crate"]
 std = ["event-listener/std", "event-listener-strategy/std"]
+loom = ["event-listener/loom", "dep:loom"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 
 [dev-dependencies]
 async-channel = "2.2.0"
