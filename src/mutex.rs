@@ -4,11 +4,13 @@ use core::fmt;
 use core::marker::{PhantomData, PhantomPinned};
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
 use core::usize;
 
 use alloc::sync::Arc;
+
+// We don't use loom::UnsafeCell as that doesn't work with the Mutex API.
+use crate::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 use std::time::{Duration, Instant};
@@ -56,20 +58,23 @@ unsafe impl<T: Send + ?Sized> Send for Mutex<T> {}
 unsafe impl<T: Send + ?Sized> Sync for Mutex<T> {}
 
 impl<T> Mutex<T> {
-    /// Creates a new async mutex.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use async_lock::Mutex;
-    ///
-    /// let mutex = Mutex::new(0);
-    /// ```
-    pub const fn new(data: T) -> Mutex<T> {
-        Mutex {
-            state: AtomicUsize::new(0),
-            lock_ops: Event::new(),
-            data: UnsafeCell::new(data),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        /// Creates a new async mutex.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use async_lock::Mutex;
+        ///
+        /// let mutex = Mutex::new(0);
+        /// ```
+        pub const fn new(data: T) -> Mutex<T> {
+            Mutex {
+                state: AtomicUsize::new(0),
+                lock_ops: Event::new(),
+                data: UnsafeCell::new(data),
+            }
         }
     }
 
@@ -186,7 +191,7 @@ impl<T: ?Sized> Mutex<T> {
     /// # })
     /// ```
     pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+        self.data.get_mut()
     }
 
     /// Unlocks the mutex directly.

@@ -9,8 +9,9 @@
 use core::marker::PhantomPinned;
 use core::mem::forget;
 use core::pin::Pin;
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::task::Poll;
+
+use crate::sync::atomic::{AtomicUsize, Ordering};
 
 use event_listener::{Event, EventListener};
 use event_listener_strategy::{EventListenerFuture, Strategy};
@@ -43,13 +44,16 @@ pub(super) struct RawRwLock {
 }
 
 impl RawRwLock {
-    #[inline]
-    pub(super) const fn new() -> Self {
-        RawRwLock {
-            mutex: Mutex::new(()),
-            no_readers: Event::new(),
-            no_writer: Event::new(),
-            state: AtomicUsize::new(0),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        #[inline]
+        pub(super) const fn new() -> Self {
+            RawRwLock {
+                mutex: Mutex::new(()),
+                no_readers: Event::new(),
+                no_writer: Event::new(),
+                state: AtomicUsize::new(0),
+            }
         }
     }
 

@@ -55,21 +55,24 @@ unsafe impl<T: Send + ?Sized> Send for RwLock<T> {}
 unsafe impl<T: Send + Sync + ?Sized> Sync for RwLock<T> {}
 
 impl<T> RwLock<T> {
-    /// Creates a new reader-writer lock.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use async_lock::RwLock;
-    ///
-    /// let lock = RwLock::new(0);
-    /// ```
-    #[must_use]
-    #[inline]
-    pub const fn new(t: T) -> RwLock<T> {
-        RwLock {
-            raw: RawRwLock::new(),
-            value: UnsafeCell::new(t),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        /// Creates a new reader-writer lock.
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use async_lock::RwLock;
+        ///
+        /// let lock = RwLock::new(0);
+        /// ```
+        #[must_use]
+        #[inline]
+        pub const fn new(t: T) -> RwLock<T> {
+            RwLock {
+                raw: RawRwLock::new(),
+                value: UnsafeCell::new(t),
+            }
         }
     }
 

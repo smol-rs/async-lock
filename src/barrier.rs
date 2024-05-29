@@ -23,28 +23,31 @@ struct State {
 }
 
 impl Barrier {
-    /// Creates a barrier that can block the given number of tasks.
-    ///
-    /// A barrier will block `n`-1 tasks which call [`wait()`] and then wake up all tasks
-    /// at once when the `n`th task calls [`wait()`].
-    ///
-    /// [`wait()`]: `Barrier::wait()`
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use async_lock::Barrier;
-    ///
-    /// let barrier = Barrier::new(5);
-    /// ```
-    pub const fn new(n: usize) -> Barrier {
-        Barrier {
-            n,
-            state: Mutex::new(State {
-                count: 0,
-                generation_id: 0,
-            }),
-            event: Event::new(),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        /// Creates a barrier that can block the given number of tasks.
+        ///
+        /// A barrier will block `n`-1 tasks which call [`wait()`] and then wake up all tasks
+        /// at once when the `n`th task calls [`wait()`].
+        ///
+        /// [`wait()`]: `Barrier::wait()`
+        ///
+        /// # Examples
+        ///
+        /// ```
+        /// use async_lock::Barrier;
+        ///
+        /// let barrier = Barrier::new(5);
+        /// ```
+        pub const fn new(n: usize) -> Barrier {
+            Barrier {
+                n,
+                state: Mutex::new(State {
+                    count: 0,
+                    generation_id: 0,
+                }),
+                event: Event::new(),
+            }
         }
     }
 

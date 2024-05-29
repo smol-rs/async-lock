@@ -71,6 +71,22 @@ macro_rules! pin {
     }
 }
 
+/// Make the given function const if the given condition is true.
+macro_rules! const_fn {
+    (
+        const_if: #[cfg($($cfg:tt)+)];
+        $(#[$($attr:tt)*])*
+        $vis:vis const fn $($rest:tt)*
+    ) => {
+        #[cfg($($cfg)+)]
+        $(#[$($attr)*])*
+        $vis const fn $($rest)*
+        #[cfg(not($($cfg)+))]
+        $(#[$($attr)*])*
+        $vis fn $($rest)*
+    };
+}
+
 mod barrier;
 mod mutex;
 mod once_cell;
@@ -95,6 +111,38 @@ pub mod futures {
         Read, ReadArc, UpgradableRead, UpgradableReadArc, Upgrade, UpgradeArc, Write, WriteArc,
     };
     pub use crate::semaphore::{Acquire, AcquireArc};
+}
+
+#[cfg(not(loom))]
+/// Synchronization primitive implementation.
+mod sync {
+    pub(super) use core::sync::atomic;
+
+    pub(super) trait WithMut {
+        type Output;
+
+        fn with_mut<F, R>(&mut self, f: F) -> R
+        where
+            F: FnOnce(&mut Self::Output) -> R;
+    }
+
+    impl WithMut for atomic::AtomicUsize {
+        type Output = usize;
+
+        #[inline]
+        fn with_mut<F, R>(&mut self, f: F) -> R
+        where
+            F: FnOnce(&mut Self::Output) -> R,
+        {
+            f(self.get_mut())
+        }
+    }
+}
+
+#[cfg(loom)]
+/// Synchronization primitive implementation.
+mod sync {
+    pub(super) use loom::sync::atomic;
 }
 
 #[cold]

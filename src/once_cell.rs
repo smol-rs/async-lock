@@ -4,7 +4,11 @@ use core::fmt;
 use core::future::Future;
 use core::mem::{forget, MaybeUninit};
 use core::ptr;
-use core::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(not(loom))]
+use crate::sync::WithMut;
 
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -107,22 +111,25 @@ unsafe impl<T: Send> Send for OnceCell<T> {}
 unsafe impl<T: Send + Sync> Sync for OnceCell<T> {}
 
 impl<T> OnceCell<T> {
-    /// Create a new, uninitialized `OnceCell`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use async_lock::OnceCell;
-    ///
-    /// let cell = OnceCell::new();
-    /// # cell.set_blocking(1);
-    /// ```
-    pub const fn new() -> Self {
-        Self {
-            active_initializers: Event::new(),
-            passive_waiters: Event::new(),
-            state: AtomicUsize::new(State::Uninitialized as _),
-            value: UnsafeCell::new(MaybeUninit::uninit()),
+    const_fn! {
+        const_if: #[cfg(not(loom))];
+        /// Create a new, uninitialized `OnceCell`.
+        ///
+        /// # Example
+        ///
+        /// ```rust
+        /// use async_lock::OnceCell;
+        ///
+        /// let cell = OnceCell::new();
+        /// # cell.set_blocking(1);
+        /// ```
+        pub const fn new() -> Self {
+            Self {
+                active_initializers: Event::new(),
+                passive_waiters: Event::new(),
+                state: AtomicUsize::new(State::Uninitialized as _),
+                value: UnsafeCell::new(MaybeUninit::uninit()),
+            }
         }
     }
 
@@ -194,13 +201,15 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn get_mut(&mut self) -> Option<&mut T> {
-        if State::from(*self.state.get_mut()) == State::Initialized {
-            // SAFETY: We know that the value is initialized, so it is safe to
-            // read it.
-            Some(unsafe { &mut *self.value.get().cast() })
-        } else {
-            None
-        }
+        self.state.with_mut(|state| {
+            if State::from(*state) == State::Initialized {
+                // SAFETY: We know that the value is initialized, so it is safe to
+                // read it.
+                Some(unsafe { &mut *self.value.get().cast() })
+            } else {
+                None
+            }
+        })
     }
 
     /// Take the value out of this `OnceCell`, moving it back to the uninitialized
@@ -219,15 +228,17 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub fn take(&mut self) -> Option<T> {
-        if State::from(*self.state.get_mut()) == State::Initialized {
-            // SAFETY: We know that the value is initialized, so it is safe to
-            // read it.
-            let value = unsafe { ptr::read(self.value.get().cast()) };
-            *self.state.get_mut() = State::Uninitialized.into();
-            Some(value)
-        } else {
-            None
-        }
+        self.state.with_mut(|state| {
+            if State::from(*state) == State::Initialized {
+                // SAFETY: We know that the value is initialized, so it is safe to
+                // read it.
+                let value = unsafe { ptr::read(self.value.get().cast()) };
+                *state = State::Uninitialized.into();
+                Some(value)
+            } else {
+                None
+            }
+        })
     }
 
     /// Convert this `OnceCell` into the inner value, if it is initialized.
@@ -754,11 +765,13 @@ impl<T: fmt::Debug> fmt::Debug for OnceCell<T> {
 
 impl<T> Drop for OnceCell<T> {
     fn drop(&mut self) {
-        if State::from(*self.state.get_mut()) == State::Initialized {
-            // SAFETY: We know that the value is initialized, so it is safe to
-            // drop it.
-            unsafe { self.value.get().cast::<T>().drop_in_place() }
-        }
+        self.state.with_mut(|state| {
+            if State::from(*state) == State::Initialized {
+                // SAFETY: We know that the value is initialized, so it is safe to
+                // drop it.
+                unsafe { self.value.get().cast::<T>().drop_in_place() }
+            }
+        });
     }
 }
 
