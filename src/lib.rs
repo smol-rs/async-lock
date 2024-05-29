@@ -116,11 +116,7 @@ pub mod futures {
 #[cfg(not(loom))]
 /// Synchronization primitive implementation.
 mod sync {
-    #[cfg(not(feature = "portable-atomic"))]
     pub(super) use core::sync::atomic;
-
-    #[cfg(feature = "portable-atomic")]
-    pub(super) use portable_atomic_util::Arc;
 
     pub(super) trait WithMut {
         type Output;
