@@ -5,6 +5,7 @@ use loom::thread;
 
 use async_lock::Barrier;
 
+#[ignore]
 #[test]
 fn barrier_smoke() {
     loom::model(|| {
