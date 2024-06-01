@@ -1,3 +1,7 @@
+# Version 3.4.0
+
+- Port to `event-listener` v5.0.0. (#74)
+
 # Version 3.3.0
 
 - Add a `forget()` method for semaphore guards. (#73)
