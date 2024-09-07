@@ -27,7 +27,7 @@ fn barrier_smoke() {
             }
 
             // At this point, all spawned threads should be blocked,
-            // so we shouldn't get anything from the cahnnel.
+            // so we shouldn't get anything from the channel.
             let res = rx.try_recv();
             assert!(res.is_err());
 

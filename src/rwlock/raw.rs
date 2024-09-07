@@ -138,7 +138,7 @@ impl RawRwLock {
         }
     }
 
-    /// Returs `true` iff a write lock was successfully acquired.
+    /// Returns `true` iff a write lock was successfully acquired.
 
     pub(super) fn try_write(&self) -> bool {
         // First try grabbing the mutex.
@@ -207,7 +207,7 @@ impl RawRwLock {
     /// # Safety
     ///
     /// Caller must hold an upgradable read lock.
-    /// This will downgrade it to a stadard read lock.
+    /// This will downgrade it to a standard read lock.
     #[inline]
 
     pub(super) unsafe fn downgrade_upgradable_read(&self) {
@@ -421,7 +421,7 @@ pin_project_lite::pin_project! {
         // Our listener for the "no readers" event.
         no_readers: Option<EventListener>,
 
-        // Current state fof this future.
+        // Current state of this future.
         #[pin]
         state: WriteState<'a>,
     }
