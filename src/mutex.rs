@@ -5,7 +5,6 @@ use core::marker::{PhantomData, PhantomPinned};
 use core::ops::{Deref, DerefMut};
 use core::pin::Pin;
 use core::task::Poll;
-use core::usize;
 
 use alloc::sync::Arc;
 
@@ -314,7 +313,7 @@ impl<T> From<T> for Mutex<T> {
     }
 }
 
-impl<T: Default + ?Sized> Default for Mutex<T> {
+impl<T: Default> Default for Mutex<T> {
     fn default() -> Mutex<T> {
         Mutex::new(Default::default())
     }

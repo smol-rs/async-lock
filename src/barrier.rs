@@ -210,7 +210,7 @@ impl EventListenerFuture for BarrierWaitInner<'_> {
                         // We are the last one.
                         state.count = 0;
                         state.generation_id = state.generation_id.wrapping_add(1);
-                        this.barrier.event.notify(core::usize::MAX);
+                        this.barrier.event.notify(usize::MAX);
                         return Poll::Ready(BarrierWaitResult { is_leader: true });
                     }
                 }

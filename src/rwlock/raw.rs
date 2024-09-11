@@ -69,7 +69,7 @@ impl RawRwLock {
             }
 
             // Make sure the number of readers doesn't overflow.
-            if state > core::isize::MAX as usize {
+            if state > isize::MAX as usize {
                 crate::abort();
             }
 
@@ -111,7 +111,7 @@ impl RawRwLock {
         let mut state = self.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > core::isize::MAX as usize {
+        if state > isize::MAX as usize {
             crate::abort();
         }
 
@@ -320,7 +320,7 @@ impl<'a> EventListenerFuture for RawRead<'a> {
         loop {
             if *this.state & WRITER_BIT == 0 {
                 // Make sure the number of readers doesn't overflow.
-                if *this.state > core::isize::MAX as usize {
+                if *this.state > isize::MAX as usize {
                     crate::abort();
                 }
 
@@ -390,7 +390,7 @@ impl<'a> EventListenerFuture for RawUpgradableRead<'a> {
         let mut state = this.lock.state.load(Ordering::Acquire);
 
         // Make sure the number of readers doesn't overflow.
-        if state > core::isize::MAX as usize {
+        if state > isize::MAX as usize {
             crate::abort();
         }
 
