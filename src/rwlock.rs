@@ -701,7 +701,7 @@ impl<T> From<T> for RwLock<T> {
     }
 }
 
-impl<T: Default + ?Sized> Default for RwLock<T> {
+impl<T: Default> Default for RwLock<T> {
     #[inline]
     fn default() -> RwLock<T> {
         RwLock::new(Default::default())

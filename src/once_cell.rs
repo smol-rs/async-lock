@@ -476,6 +476,8 @@ impl<T> OnceCell<T> {
     /// # });
     /// ```
     pub async fn get_or_init<Fut: Future<Output = T>>(&self, closure: impl FnOnce() -> Fut) -> &T {
+        // false positive: https://github.com/rust-lang/rust/issues/129352
+        #[allow(unreachable_patterns)]
         match self
             .get_or_try_init(move || async move {
                 let result: Result<T, Infallible> = Ok(closure().await);
@@ -517,6 +519,9 @@ impl<T> OnceCell<T> {
             let result: Result<T, Infallible> = Ok(closure());
             result
         });
+
+        // false positive: https://github.com/rust-lang/rust/issues/129352
+        #[allow(unreachable_patterns)]
         match result {
             Ok(value) => value,
             Err(infallible) => match infallible {},
@@ -659,8 +664,8 @@ impl<T> OnceCell<T> {
                                 .store(State::Initialized.into(), Ordering::Release);
 
                             // Notify the listeners that the value is initialized.
-                            self.active_initializers.notify_additional(core::usize::MAX);
-                            self.passive_waiters.notify_additional(core::usize::MAX);
+                            self.active_initializers.notify_additional(usize::MAX);
+                            self.passive_waiters.notify_additional(usize::MAX);
 
                             return Ok(());
                         }
