@@ -279,7 +279,7 @@ impl<T: ?Sized> RwLock<T> {
         self.read().wait()
     }
 
-    /// Attempts to acquire a read lock with the possiblity to upgrade to a write lock.
+    /// Attempts to acquire a read lock with the possibility to upgrade to a write lock.
     ///
     /// If a read lock could not be acquired at this time, then [`None`] is returned. Otherwise, a
     /// guard is returned that releases the lock when dropped.
@@ -315,7 +315,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquires a read lock with the possiblity to upgrade to a write lock.
+    /// Acquires a read lock with the possibility to upgrade to a write lock.
     ///
     /// Returns a guard that releases the lock when dropped.
     ///
@@ -346,7 +346,7 @@ impl<T: ?Sized> RwLock<T> {
         UpgradableRead::new(self.raw.upgradable_read(), self.value.get())
     }
 
-    /// Attempts to acquire a read lock with the possiblity to upgrade to a write lock.
+    /// Attempts to acquire a read lock with the possibility to upgrade to a write lock.
     ///
     /// Returns a guard that releases the lock when dropped.
     ///
@@ -386,7 +386,7 @@ impl<T: ?Sized> RwLock<T> {
     }
 
     /// Attempts to acquire an owned, reference-counted read lock
-    /// with the possiblity to upgrade to a write lock.
+    /// with the possibility to upgrade to a write lock.
     ///
     /// Returns a guard that releases the lock when dropped.
     ///
@@ -426,7 +426,7 @@ impl<T: ?Sized> RwLock<T> {
         self.upgradable_read_arc().wait()
     }
 
-    /// Attempts to acquire an owned, reference-counted read lock with the possiblity to
+    /// Attempts to acquire an owned, reference-counted read lock with the possibility to
     /// upgrade to a write lock.
     ///
     /// If a read lock could not be acquired at this time, then [`None`] is returned. Otherwise, a
@@ -461,7 +461,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
-    /// Acquires an owned, reference-counted read lock with the possiblity
+    /// Acquires an owned, reference-counted read lock with the possibility
     /// to upgrade to a write lock.
     ///
     /// Returns a guard that releases the lock when dropped.
