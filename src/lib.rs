@@ -4,6 +4,7 @@
 //!
 //! * [`Barrier`] - enables tasks to synchronize all together at the same time.
 //! * [`Mutex`] - a mutual exclusion lock.
+//! * [`RefCell`] - a single thread reader-writer lock, allowing any number of readers or a single writer.
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
 //!
@@ -90,12 +91,14 @@ macro_rules! const_fn {
 mod barrier;
 mod mutex;
 mod once_cell;
+mod refcell;
 mod rwlock;
 mod semaphore;
 
 pub use barrier::{Barrier, BarrierWaitResult};
 pub use mutex::{Mutex, MutexGuard, MutexGuardArc};
 pub use once_cell::OnceCell;
+pub use refcell::RefCell;
 pub use rwlock::{
     RwLock, RwLockReadGuard, RwLockReadGuardArc, RwLockUpgradableReadGuard,
     RwLockUpgradableReadGuardArc, RwLockWriteGuard, RwLockWriteGuardArc,
