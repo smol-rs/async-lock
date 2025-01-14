@@ -35,6 +35,11 @@ fastrand = "2.0.0"
 flume = "0.11.0"
 futures-lite = "2.0.0"
 waker-fn = "1.1.0"
+async-std = "1.0"
+
+[patch.crates-io]
+# use local async-lock as dependency of async-std for dev-dependencies, instead of published one
+async-lock = { path = "." }
 
 [target.'cfg(target_family = "wasm")'.dev-dependencies]
 wasm-bindgen-test = "0.3"
