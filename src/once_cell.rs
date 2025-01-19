@@ -687,7 +687,7 @@ impl<T> OnceCell<T> {
         /// `UNINITIALIZED` and that the next listener is notified.
         struct Guard<'a, T>(&'a OnceCell<T>);
 
-        impl<'a, T> Drop for Guard<'a, T> {
+        impl<T> Drop for Guard<'_, T> {
             fn drop(&mut self) {
                 self.0
                     .state
