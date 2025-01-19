@@ -307,7 +307,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> EventListenerFuture for RawRead<'a> {
+impl EventListenerFuture for RawRead<'_> {
     type Output = ();
 
     fn poll_with_strategy<'x, S: Strategy<'x>>(
@@ -372,7 +372,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> EventListenerFuture for RawUpgradableRead<'a> {
+impl EventListenerFuture for RawUpgradableRead<'_> {
     type Output = ();
 
     fn poll_with_strategy<'x, S: Strategy<'x>>(
@@ -455,7 +455,7 @@ pin_project_lite::pin_project! {
     }
 }
 
-impl<'a> EventListenerFuture for RawWrite<'a> {
+impl EventListenerFuture for RawWrite<'_> {
     type Output = ();
 
     fn poll_with_strategy<'x, S: Strategy<'x>>(
@@ -583,7 +583,7 @@ impl<'a> EventListenerFuture for RawUpgrade<'a> {
     }
 }
 
-impl<'a> RawUpgrade<'a> {
+impl RawUpgrade<'_> {
     /// Whether the future returned `Poll::Ready(..)` at some point.
     #[inline]
     pub(super) fn is_ready(&self) -> bool {

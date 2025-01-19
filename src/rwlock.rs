@@ -848,7 +848,7 @@ pub struct RwLockUpgradableReadGuard<'a, T: ?Sized> {
     value: *mut T,
 }
 
-impl<'a, T: ?Sized> Drop for RwLockUpgradableReadGuard<'a, T> {
+impl<T: ?Sized> Drop for RwLockUpgradableReadGuard<'_, T> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: we are dropping an upgradable read guard.
@@ -1219,7 +1219,7 @@ pub struct RwLockWriteGuard<'a, T: ?Sized> {
 unsafe impl<T: Send + ?Sized> Send for RwLockWriteGuard<'_, T> {}
 unsafe impl<T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, T> {}
 
-impl<'a, T: ?Sized> Drop for RwLockWriteGuard<'a, T> {
+impl<T: ?Sized> Drop for RwLockWriteGuard<'_, T> {
     #[inline]
     fn drop(&mut self) {
         // SAFETY: we are dropping a write lock

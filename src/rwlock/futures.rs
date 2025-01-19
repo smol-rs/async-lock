@@ -104,7 +104,7 @@ impl<T> fmt::Debug for ReadArc<'_, T> {
     }
 }
 
-impl<'a, T> EventListenerFuture for ReadArcInner<'a, T> {
+impl<T> EventListenerFuture for ReadArcInner<'_, T> {
     type Output = RwLockReadGuardArc<T>;
 
     #[inline]
@@ -216,7 +216,7 @@ impl<T: ?Sized> fmt::Debug for UpgradableReadArc<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> EventListenerFuture for UpgradableReadArcInner<'a, T> {
+impl<T: ?Sized> EventListenerFuture for UpgradableReadArcInner<'_, T> {
     type Output = RwLockUpgradableReadGuardArc<T>;
 
     #[inline]
@@ -323,7 +323,7 @@ impl<T: ?Sized> fmt::Debug for WriteArc<'_, T> {
     }
 }
 
-impl<'a, T: ?Sized> EventListenerFuture for WriteArcInner<'a, T> {
+impl<T: ?Sized> EventListenerFuture for WriteArcInner<'_, T> {
     type Output = RwLockWriteGuardArc<T>;
 
     #[inline]
