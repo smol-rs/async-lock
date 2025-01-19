@@ -97,7 +97,6 @@ impl RawRwLock {
     }
 
     /// Returns `true` iff an upgradable read lock was successfully acquired.
-
     pub(super) fn try_upgradable_read(&self) -> bool {
         // First try grabbing the mutex.
         let lock = if let Some(lock) = self.mutex.try_lock() {
@@ -130,7 +129,6 @@ impl RawRwLock {
     }
 
     #[inline]
-
     pub(super) fn upgradable_read(&self) -> RawUpgradableRead<'_> {
         RawUpgradableRead {
             lock: self,
@@ -139,7 +137,6 @@ impl RawRwLock {
     }
 
     /// Returns `true` iff a write lock was successfully acquired.
-
     pub(super) fn try_write(&self) -> bool {
         // First try grabbing the mutex.
         let lock = if let Some(lock) = self.mutex.try_lock() {
@@ -163,7 +160,6 @@ impl RawRwLock {
     }
 
     #[inline]
-
     pub(super) fn write(&self) -> RawWrite<'_> {
         RawWrite {
             lock: self,
@@ -180,7 +176,6 @@ impl RawRwLock {
     ///
     /// Caller must hold an upgradable read lock.
     /// This will attempt to upgrade it to a write lock.
-
     pub(super) unsafe fn try_upgrade(&self) -> bool {
         self.state
             .compare_exchange(ONE_READER, WRITER_BIT, Ordering::AcqRel, Ordering::Acquire)
@@ -191,7 +186,6 @@ impl RawRwLock {
     ///
     /// Caller must hold an upgradable read lock.
     /// This will upgrade it to a write lock.
-
     pub(super) unsafe fn upgrade(&self) -> RawUpgrade<'_> {
         // Set `WRITER_BIT` and decrement the number of readers at the same time.
         self.state
@@ -209,7 +203,6 @@ impl RawRwLock {
     /// Caller must hold an upgradable read lock.
     /// This will downgrade it to a standard read lock.
     #[inline]
-
     pub(super) unsafe fn downgrade_upgradable_read(&self) {
         self.mutex.unlock_unchecked();
     }
@@ -218,7 +211,6 @@ impl RawRwLock {
     ///
     /// Caller must hold a write lock.
     /// This will downgrade it to a read lock.
-
     pub(super) unsafe fn downgrade_write(&self) {
         // Atomically downgrade state.
         self.state
@@ -235,7 +227,6 @@ impl RawRwLock {
     ///
     /// Caller must hold a write lock.
     /// This will downgrade it to an upgradable read lock.
-
     pub(super) unsafe fn downgrade_to_upgradable(&self) {
         // Atomically downgrade state.
         self.state
@@ -246,7 +237,6 @@ impl RawRwLock {
     ///
     /// Caller must hold a read lock .
     /// This will unlock that lock.
-
     pub(super) unsafe fn read_unlock(&self) {
         // Decrement the number of readers.
         if self.state.fetch_sub(ONE_READER, Ordering::SeqCst) & !WRITER_BIT == ONE_READER {
@@ -259,7 +249,6 @@ impl RawRwLock {
     ///
     /// Caller must hold an upgradable read lock.
     /// This will unlock that lock.
-
     pub(super) unsafe fn upgradable_read_unlock(&self) {
         // Decrement the number of readers.
         if self.state.fetch_sub(ONE_READER, Ordering::SeqCst) & !WRITER_BIT == ONE_READER {
@@ -275,7 +264,6 @@ impl RawRwLock {
     ///
     /// Caller must hold a write lock.
     /// This will unlock that lock.
-
     pub(super) unsafe fn write_unlock(&self) {
         // Unset `WRITER_BIT`.
         self.state.fetch_and(!WRITER_BIT, Ordering::SeqCst);
