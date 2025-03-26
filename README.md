@@ -7,6 +7,7 @@ https://github.com/smol-rs/async-lock)
 [![Cargo](https://img.shields.io/crates/v/async-lock.svg)](
 https://crates.io/crates/async-lock)
 [![Documentation](https://docs.rs/async-lock/badge.svg)](
+[![libs.tech recommends](https://libs.tech/project/264701034/badge.svg)](https://libs.tech/project/264701034/async-lock)
 https://docs.rs/async-lock)
 
 Async synchronization primitives.
