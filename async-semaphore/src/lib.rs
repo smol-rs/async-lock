@@ -1,6 +1,8 @@
-//! An async semaphore.
+//! DO NOT USE!
 //!
-//! A semaphore is a synchronization primitive that limits the number of concurrent operations.
+//! This crate was merged into [async-lock], which provides the API this crate used to.
+//!
+//! [async-lock]: https://crates.io/crates/async-lock
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
