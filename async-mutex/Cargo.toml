@@ -1,6 +1,6 @@
 [package]
 name = "async-mutex"
-version = "1.4.0"
+version = "1.4.1"
 authors = ["Stjepan Glavina <stjepang@gmail.com>"]
 edition = "2018"
 description = "Async mutex"
@@ -10,7 +10,7 @@ homepage = "https://github.com/stjepang/async-lock"
 documentation = "https://docs.rs/async-mutex"
 keywords = ["asynchronous", "mutex", "lock", "synchronization"]
 categories = ["asynchronous", "concurrency"]
-readme = "../README.md"
+readme = "README.md"
 
 [dependencies]
 event-listener = "2.0.0"

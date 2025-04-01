@@ -1,25 +1,8 @@
-//! An async mutex.
+//! DO NOT USE!
 //!
-//! The locking mechanism uses eventual fairness to ensure locking will be fair on average without
-//! sacrificing performance. This is done by forcing a fair lock whenever a lock operation is
-//! starved for longer than 0.5 milliseconds.
+//! This crate was merged into [async-lock], which provides the API this crate used to.
 //!
-//! # Examples
-//!
-//! ```
-//! # futures_lite::future::block_on(async {
-//! use async_mutex::Mutex;
-//!
-//! let m = Mutex::new(1);
-//!
-//! let mut guard = m.lock().await;
-//! *guard = 2;
-//!
-//! assert!(m.try_lock().is_none());
-//! drop(guard);
-//! assert_eq!(*m.try_lock().unwrap(), 2);
-//! # })
-//! ```
+//! [async-lock]: https://crates.io/crates/async-lock
 
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
