@@ -1,31 +1,8 @@
-//! An async reader-writer lock.
+//! DO NOT USE!
 //!
-//! This type of lock allows multiple readers or one writer at any point in time.
+//! This crate was merged into [async-lock], which provides the API this crate used to.
 //!
-//! The locking strategy is write-preferring, which means writers are never starved.
-//! Releasing a write lock wakes the next blocked reader and the next blocked writer.
-//!
-//! # Examples
-//!
-//! ```
-//! # futures_lite::future::block_on(async {
-//! use async_rwlock::RwLock;
-//!
-//! let lock = RwLock::new(5);
-//!
-//! // Multiple read locks can be held at a time.
-//! let r1 = lock.read().await;
-//! let r2 = lock.read().await;
-//! assert_eq!(*r1, 5);
-//! assert_eq!(*r2, 5);
-//! drop((r1, r2));
-//!
-//! // Only one write lock can be held at a time.
-//! let mut w = lock.write().await;
-//! *w += 1;
-//! assert_eq!(*w, 6);
-//! # })
-//! ```
+//! [async-lock]: https://crates.io/crates/async-lock
 
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
