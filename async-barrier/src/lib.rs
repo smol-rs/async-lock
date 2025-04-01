@@ -1,6 +1,8 @@
-//! An async barrier.
+//! DO NOT USE!
 //!
-//! This crate is an async version of [`std::sync::Barrier`].
+//! This crate was merged into [async-lock], which provides the API this crate used to.
+//!
+//! [async-lock]: https://crates.io/crates/async-lock
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
