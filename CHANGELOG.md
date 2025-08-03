@@ -1,3 +1,7 @@
+# Version 3.4.1
+
+- Fix typos in docs. (#89)
+
 # Version 3.4.0
 
 - Port to `event-listener` v5.0.0. (#74)
