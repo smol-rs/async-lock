@@ -118,7 +118,7 @@ impl<T> OnceCell<T> {
         /// use async_lock::OnceCell;
         ///
         /// let cell = OnceCell::new();
-        /// # cell.set_blocking(1);
+        /// # let _: Option<&u32> = cell.get();
         /// ```
         pub const fn new() -> Self {
             Self {
@@ -260,7 +260,8 @@ impl<T> OnceCell<T> {
     ///
     /// # Example
     ///
-    /// ```rust
+    #[cfg_attr(not(target_family = "wasm"), doc = "```rust")]
+    #[cfg_attr(target_family = "wasm", doc = "```ignore")]
     /// use async_lock::OnceCell;
     /// use std::sync::Arc;
     /// use std::time::Duration;
