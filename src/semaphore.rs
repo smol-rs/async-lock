@@ -2,7 +2,7 @@ use core::fmt;
 use core::marker::PhantomPinned;
 use core::mem;
 use core::pin::Pin;
-use core::task::Poll;
+use core::task::{ready, Poll};
 
 use crate::sync::atomic::{AtomicUsize, Ordering};
 
