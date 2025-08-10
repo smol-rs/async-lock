@@ -1,7 +1,7 @@
 use core::fmt;
 use core::mem::ManuallyDrop;
 use core::pin::Pin;
-use core::task::Poll;
+use core::task::{ready, Poll};
 
 use alloc::sync::Arc;
 

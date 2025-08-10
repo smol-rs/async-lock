@@ -41,36 +41,6 @@
 
 extern crate alloc;
 
-/// Simple macro to extract the value of `Poll` or return `Pending`.
-///
-/// TODO: Drop in favor of `core::task::ready`, once MSRV is bumped to 1.64.
-macro_rules! ready {
-    ($e:expr) => {{
-        use ::core::task::Poll;
-
-        match $e {
-            Poll::Ready(v) => v,
-            Poll::Pending => return Poll::Pending,
-        }
-    }};
-}
-
-/// Pins a variable on the stack.
-///
-/// TODO: Drop in favor of `core::pin::pin`, once MSRV is bumped to 1.68.
-#[cfg(all(feature = "std", not(target_family = "wasm")))]
-macro_rules! pin {
-    ($($x:ident),* $(,)?) => {
-        $(
-            let mut $x = $x;
-            #[allow(unused_mut)]
-            let mut $x = unsafe {
-                core::pin::Pin::new_unchecked(&mut $x)
-            };
-        )*
-    }
-}
-
 /// Make the given function const if the given condition is true.
 macro_rules! const_fn {
     (

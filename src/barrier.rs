@@ -3,7 +3,7 @@ use event_listener_strategy::{easy_wrapper, EventListenerFuture, Strategy};
 
 use core::fmt;
 use core::pin::Pin;
-use core::task::Poll;
+use core::task::{ready, Poll};
 
 use crate::futures::Lock;
 use crate::Mutex;

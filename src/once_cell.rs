@@ -791,6 +791,8 @@ impl<T> Default for OnceCell<T> {
 /// Either return the result of a future now, or panic.
 #[cfg(all(feature = "std", not(target_family = "wasm")))]
 fn now_or_never<T>(f: impl Future<Output = T>) -> T {
+    use core::pin::pin;
+
     const NOOP_WAKER: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
     unsafe fn wake(_: *const ()) {}
@@ -800,7 +802,7 @@ fn now_or_never<T>(f: impl Future<Output = T>) -> T {
     }
     unsafe fn drop(_: *const ()) {}
 
-    pin!(f);
+    let f = pin!(f);
 
     let waker = unsafe { Waker::from_raw(RawWaker::new(ptr::null(), &NOOP_WAKER)) };
 
