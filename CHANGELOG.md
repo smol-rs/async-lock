@@ -1,3 +1,8 @@
+# Version 3.4.2
+
+- Bump MSRV to 1.85. (#103)
+- Use Waker::noop() to avoid some unsafe code. (#103)
+
 # Version 3.4.1
 
 - Fix typos in docs. (#89)
