@@ -4,6 +4,7 @@
 //!
 //! * [`Barrier`] - enables tasks to synchronize all together at the same time.
 //! * [`Mutex`] - a mutual exclusion lock.
+//! * [`OnceCell`] - a memory location that can be written to at most once.
 //! * [`RwLock`] - a reader-writer lock, allowing any number of readers or a single writer.
 //! * [`Semaphore`] - limits the number of concurrent operations.
 //!
