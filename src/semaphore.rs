@@ -409,8 +409,10 @@ impl SemaphoreGuard<'_> {
 
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
-        self.0.count.fetch_sub(1, Ordering::AcqRel);
-        self.0.event.notify(1);
+        let old = self.0.count.fetch_sub(1, Ordering::AcqRel);
+        if old <= self.0.size() {
+            self.0.event.notify(1);
+        }
     }
 }
 
@@ -434,7 +436,9 @@ impl SemaphoreGuardArc {
 impl Drop for SemaphoreGuardArc {
     fn drop(&mut self) {
         let opt = self.0.take().unwrap();
-        opt.count.fetch_sub(1, Ordering::AcqRel);
-        opt.event.notify(1);
+        let old = opt.count.fetch_sub(1, Ordering::AcqRel);
+        if old <= opt.size() {
+            opt.event.notify(1);
+        }
     }
 }
