@@ -192,3 +192,106 @@ impl Future for AddPermitsTest {
         Poll::Ready(())
     }
 }
+
+#[test]
+fn set_size_shrink() {
+    future::block_on(SetSizeShrinkTest);
+}
+
+struct SetSizeShrinkTest;
+
+impl Future for SetSizeShrinkTest {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let s = Semaphore::new(2);
+        let acq_1 = s.acquire();
+        pin!(acq_1);
+        let acq_2 = s.acquire();
+        pin!(acq_2);
+
+        let acq_1_guard = acq_1.poll(cx);
+        assert!(acq_1_guard.is_ready());
+
+        let acq_2_guard = acq_2.poll(cx);
+        assert!(acq_2_guard.is_ready());
+
+        let acq_3 = s.acquire();
+        pin!(acq_3);
+        assert!(acq_3.as_mut().poll(cx).is_pending());
+
+        s.set_size(1);
+
+        assert!(acq_3.as_mut().poll(cx).is_pending());
+
+        drop(acq_2_guard);
+        assert!(acq_3.as_mut().poll(cx).is_pending());
+
+        drop(acq_1_guard);
+        assert!(acq_3.poll(cx).is_ready());
+
+        Poll::Ready(())
+    }
+}
+
+#[test]
+fn set_size_grow() {
+    future::block_on(SetSizeGrowTest);
+}
+
+struct SetSizeGrowTest;
+
+impl Future for SetSizeGrowTest {
+    type Output = ();
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        let s = Semaphore::new(2);
+        let acq_1 = s.acquire();
+        pin!(acq_1);
+        let acq_2 = s.acquire();
+        pin!(acq_2);
+
+        let acq_1_guard = acq_1.poll(cx);
+        assert!(acq_1_guard.is_ready());
+
+        let acq_2_guard = acq_2.poll(cx);
+        assert!(acq_2_guard.is_ready());
+
+        let acq_3 = s.acquire();
+        pin!(acq_3);
+        assert!(acq_3.as_mut().poll(cx).is_pending());
+
+        s.set_size(3);
+
+        assert!(acq_3.as_mut().poll(cx).is_ready());
+
+        Poll::Ready(())
+    }
+}
+
+#[test]
+fn set_size_try_acquire_shrink() {
+    let s = Semaphore::new(2);
+    let g1 = s.try_acquire().unwrap();
+    let g2 = s.try_acquire().unwrap();
+
+    s.set_size(1);
+
+    assert!(s.try_acquire().is_none());
+
+    drop(g1);
+    assert!(s.try_acquire().is_none());
+
+    drop(g2);
+    assert!(s.try_acquire().is_some());
+}
+
+#[test]
+fn set_size_try_acquire_grow() {
+    let s = Semaphore::new(1);
+    let _g1 = s.try_acquire().unwrap();
+
+    assert!(s.try_acquire().is_none());
+
+    s.set_size(2);
+
+    assert!(s.try_acquire().is_some());
+}
