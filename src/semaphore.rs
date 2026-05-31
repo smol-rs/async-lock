@@ -14,6 +14,7 @@ use event_listener_strategy::{easy_wrapper, EventListenerFuture, Strategy};
 /// A counter for limiting the number of concurrent operations.
 #[derive(Debug)]
 pub struct Semaphore {
+    size: AtomicUsize,
     count: AtomicUsize,
     event: Event,
 }
@@ -32,7 +33,8 @@ impl Semaphore {
         /// ```
         pub const fn new(n: usize) -> Semaphore {
             Semaphore {
-                count: AtomicUsize::new(n),
+                size: AtomicUsize::new(n),
+                count: AtomicUsize::new(0),
                 event: Event::new(),
             }
         }
@@ -59,14 +61,15 @@ impl Semaphore {
     /// ```
     pub fn try_acquire(&self) -> Option<SemaphoreGuard<'_>> {
         let mut count = self.count.load(Ordering::Acquire);
+        let size = self.size();
         loop {
-            if count == 0 {
+            if count >= size {
                 return None;
             }
 
             match self.count.compare_exchange_weak(
                 count,
-                count - 1,
+                count + 1,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -147,14 +150,15 @@ impl Semaphore {
     /// ```
     pub fn try_acquire_arc(self: &Arc<Self>) -> Option<SemaphoreGuardArc> {
         let mut count = self.count.load(Ordering::Acquire);
+        let size = self.size();
         loop {
-            if count == 0 {
+            if count >= size {
                 return None;
             }
 
             match self.count.compare_exchange_weak(
                 count,
-                count - 1,
+                count + 1,
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
@@ -235,8 +239,52 @@ impl Semaphore {
     /// # });
     /// ```
     pub fn add_permits(&self, n: usize) {
-        self.count.fetch_add(n, Ordering::AcqRel);
+        self.size.fetch_add(n, Ordering::AcqRel);
         self.event.notify(n);
+    }
+
+    /// Returns the currently configured size of the semaphore representing the
+    /// maximum number of concurrent operations allowed.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Semaphore::new(1);
+    /// assert_eq!(1, s.size());
+    /// s.add_permits(2);
+    /// assert_eq!(3, s.size());
+    /// #
+    /// ```
+    pub fn size(&self) -> usize {
+        self.size.load(Ordering::SeqCst)
+    }
+
+    /// Replaces the currently configured size of the semaphore with the
+    /// requested value.
+    /// Can be used to either grow or shrink the amount of concurrency allowed
+    /// by this semaphore.
+    /// Returns the previously configured value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Semaphore::new(3);
+    /// assert_eq!(3, s.set_size(1));
+    /// assert_eq!(1, s.size());
+    /// #
+    /// ```
+    pub fn set_size(&self, n: usize) -> usize {
+        let old = self.size.swap(n, Ordering::SeqCst);
+        if n > old {
+            self.event.notify(n - old);
+        }
+        old
     }
 }
 
@@ -361,7 +409,7 @@ impl SemaphoreGuard<'_> {
 
 impl Drop for SemaphoreGuard<'_> {
     fn drop(&mut self) {
-        self.0.count.fetch_add(1, Ordering::AcqRel);
+        self.0.count.fetch_sub(1, Ordering::AcqRel);
         self.0.event.notify(1);
     }
 }
@@ -386,7 +434,7 @@ impl SemaphoreGuardArc {
 impl Drop for SemaphoreGuardArc {
     fn drop(&mut self) {
         let opt = self.0.take().unwrap();
-        opt.count.fetch_add(1, Ordering::AcqRel);
+        opt.count.fetch_sub(1, Ordering::AcqRel);
         opt.event.notify(1);
     }
 }
