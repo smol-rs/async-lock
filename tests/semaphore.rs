@@ -137,6 +137,17 @@ fn smoke_arc_blocking() {
 }
 
 #[test]
+fn available_permits() {
+    let s = Semaphore::new(2);
+    assert_eq!(s.available_permits(), 2);
+
+    let gaurd = s.try_acquire().unwrap();
+    assert_eq!(s.available_permits(), 1);
+
+    drop(gaurd);
+}
+
+#[test]
 fn add_permits() {
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
