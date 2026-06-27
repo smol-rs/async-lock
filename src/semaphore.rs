@@ -238,6 +238,25 @@ impl Semaphore {
         self.count.fetch_add(n, Ordering::AcqRel);
         self.event.notify(n);
     }
+
+    /// Returns the current number of available permits.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use async_lock::Semaphore;
+    ///
+    /// let s = Semaphore::new(2);
+    /// assert_eq!(s.available_permits(), 2);
+    ///
+    /// let gaurd = s.try_acquire().unwrap();
+    /// assert_eq!(s.available_permits(), 1);
+    ///
+    /// drop(gaurd);
+    /// ```
+    pub fn available_permits(&self) -> usize {
+        self.count.load(Ordering::Acquire)
+    }
 }
 
 easy_wrapper! {
