@@ -1,7 +1,12 @@
+# Version 3.5.0
+
+- Add `OnceCell::try_set`. (#113)
+- Add `Semaphore::available_permits`. (#110)
+
 # Version 3.4.2
 
 - Bump MSRV to 1.85. (#103)
-- Use Waker::noop() to avoid some unsafe code. (#103)
+- Use `Waker::noop()` to avoid some unsafe code. (#103)
 
 # Version 3.4.1
 
