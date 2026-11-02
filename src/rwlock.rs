@@ -1232,6 +1232,13 @@ impl<T: ?Sized> Drop for RwLockWriteGuard<'_, T> {
 impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// Downgrades into a regular reader guard.
     ///
+    /// This operation is atomic: no other writer can acquire the lock between
+    /// releasing the write guard and acquiring the returned read guard.
+    ///
+    /// A waiting writer can prevent additional read locks from being acquired,
+    /// even while the downgraded guard is still held. Release the downgraded
+    /// guard before awaiting another read lock if a writer may be waiting.
+    ///
     /// # Examples
     ///
     /// ```
@@ -1249,6 +1256,30 @@ impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
     /// assert_eq!(*reader, 2);
     ///
     /// assert!(lock.try_read().is_some());
+    /// # })
+    /// ```
+    ///
+    /// A waiting writer can block new readers after the downgrade:
+    ///
+    /// ```
+    /// # futures_lite::future::block_on(async {
+    /// use async_lock::{RwLock, RwLockWriteGuard};
+    /// use futures_lite::{future::poll_once, pin};
+    ///
+    /// let lock = RwLock::new(1);
+    /// let writer = lock.write().await;
+    /// let next_writer = lock.write();
+    /// pin!(next_writer);
+    /// assert!(poll_once(&mut next_writer).await.is_none());
+    ///
+    /// let reader = RwLockWriteGuard::downgrade(writer);
+    /// // The next writer cannot acquire the lock while this reader is held.
+    /// assert!(poll_once(&mut next_writer).await.is_none());
+    /// // Once the writer is waiting for readers to leave, new readers must wait too.
+    /// assert!(lock.try_read().is_none());
+    ///
+    /// drop(reader);
+    /// assert!(poll_once(&mut next_writer).await.is_some());
     /// # })
     /// ```
     #[inline]
@@ -1357,6 +1388,13 @@ impl<T: ?Sized> Drop for RwLockWriteGuardArc<T> {
 
 impl<T> RwLockWriteGuardArc<T> {
     /// Downgrades into a regular reader guard.
+    ///
+    /// This operation is atomic: no other writer can acquire the lock between
+    /// releasing the write guard and acquiring the returned read guard.
+    ///
+    /// A waiting writer can prevent additional read locks from being acquired,
+    /// even while the downgraded guard is still held. Release the downgraded
+    /// guard before awaiting another read lock if a writer may be waiting.
     ///
     /// # Examples
     ///
