@@ -562,7 +562,7 @@ impl<T> OnceCell<T> {
     /// If the cell is already initialised *or* the is currently in the process of being
     /// initialised, this method returns the original value back.
     ///
-    /// Unlike [`OnceCel::set`] and [`OnceCell::set_blocking`], this function is neither
+    /// Unlike [`OnceCell::set`] and [`OnceCell::set_blocking`], this function is neither
     /// blocking nor async.
     pub fn try_set(&self, value: T) -> Result<(), T> {
         if self
@@ -580,7 +580,8 @@ impl<T> OnceCell<T> {
                 ptr::write(self.value.get().cast(), value);
             }
             // Mark the OnceCell as initialised
-            self.state.store(State::Initialized.into(), Ordering::Release);
+            self.state
+                .store(State::Initialized.into(), Ordering::Release);
 
             // Notify the listeners that the value is initialized.
             self.active_initializers.notify_additional(usize::MAX);
