@@ -557,6 +557,43 @@ impl<T> OnceCell<T> {
         }
     }
 
+    /// Try to set the value of the cell, without blocking.
+    ///
+    /// If the cell is already initialised *or* the is currently in the process of being
+    /// initialised, this method returns the original value back.
+    ///
+    /// Unlike [`OnceCell::set`] and [`OnceCell::set_blocking`], this function is neither
+    /// blocking nor async.
+    pub fn try_set(&self, value: T) -> Result<(), T> {
+        if self
+            .state
+            .compare_exchange(
+                State::Uninitialized.into(),
+                State::Initializing.into(),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+        {
+            // Write the value into the cell and update the state.
+            unsafe {
+                ptr::write(self.value.get().cast(), value);
+            }
+            // Mark the OnceCell as initialised
+            self.state
+                .store(State::Initialized.into(), Ordering::Release);
+
+            // Notify the listeners that the value is initialized.
+            self.active_initializers.notify_additional(usize::MAX);
+            self.passive_waiters.notify_additional(usize::MAX);
+            Ok(())
+        } else {
+            // The cell was either initialised or is in the process of being initialised,
+            // so the given value is not needed.
+            Err(value)
+        }
+    }
+
     /// Try to set the value of the cell.
     ///
     /// If the cell is already initialized, this method returns the original
